@@ -17,8 +17,9 @@ KERNEL_ELF = $(BUILD_DIR)/kernel.elf
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 KERNEL_LST = $(BUILD_DIR)/kernel.lst
 
-C_SOURCES = kernel/kernel.c 
-ASM_SOURCES = arch/arm64/boot.S
+# Auto-discover all source files
+C_SOURCES = $(shell find kernel/ drivers/ -name "*.c" 2>/dev/null || true)
+ASM_SOURCES = $(shell find arch/ -name "*.S" 2>/dev/null || true)
 
 C_OBJECTS = $(patsubst %.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
 ASM_OBJECTS = $(patsubst %.S, $(BUILD_DIR)/%.o, $(ASM_SOURCES))

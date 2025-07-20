@@ -1,0 +1,40 @@
+#include "uart.h"
+#include <stddef.h>
+
+#define UART0_BASE 0x09000000
+#define UART0_DR   *((volatile uint32_t*)(UART0_BASE + 0x00))
+#define UART0_FR   *((volatile uint32_t*)(UART0_BASE + 0x18))
+
+void uart_init(void) {
+    // PL011 UART is already initialized by QEMU
+    // In a real implementation, we would configure baud rate, data bits, etc.
+}
+
+void uart_putc(char c) {
+    while (UART0_FR & (1 << 5));
+    UART0_DR = c;
+}
+
+void uart_puts(const char* str) {
+    while (*str) {
+        if (*str == '\n') {
+            uart_putc('\r');
+        }
+        uart_putc(*str++);
+    }
+}
+
+void uart_puthex(uint64_t value) {
+    int i;
+    
+    uart_puts("0x");
+    
+    for (i = 15; i >= 0; i--) {
+        uint8_t nibble = (value >> (i * 4)) & 0xF;
+        if (nibble < 10) {
+            uart_putc('0' + nibble);
+        } else {
+            uart_putc('A' + nibble - 10);
+        }
+    }
+}
