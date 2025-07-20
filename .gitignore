@@ -1,0 +1,58 @@
+# Build artifacts
+build/
+*.o
+*.elf
+*.bin
+*.lst
+*.map
+*.dis
+
+# U-Boot binary (should be downloaded/built separately)
+u-boot.bin
+u-boot/
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Debug files
+*.log
+core
+*.dump
+
+# Temporary files
+*.tmp
+.tmp/
+tmp/
+
+# Documentation build
+docs/_build/
+*.pdf
+
+# Python cache (if we add any Python scripts)
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files
+*.bak
+*.orig
+
+# Dependencies and external tools
+tools/
+external/
+
+# Tags files
+tags
+TAGS
+cscope.*
+
+# Coverage and profiling
+*.gcda
+*.gcno
+*.gcov
+gmon.out
