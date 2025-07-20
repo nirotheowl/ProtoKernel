@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stddef.h>
-#include "../drivers/uart/uart.h"
+#include <uart.h>
 
 void kernel_main(void* dtb) {
     uart_puts("\n=======================================\n");
