@@ -21,5 +21,4 @@ qemu-system-aarch64 \
     -m 1G \
     -kernel "$KERNEL_BIN" \
     -serial stdio \
-    -device ramfb \
-    -device virtio-gpu-pci
+    -device ramfb

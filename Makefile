@@ -17,7 +17,7 @@ KERNEL_ELF = $(BUILD_DIR)/kernel.elf
 KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 KERNEL_LST = $(BUILD_DIR)/kernel.lst
 
-C_SOURCES = kernel/kernel.c kernel/display.c
+C_SOURCES = kernel/kernel.c 
 ASM_SOURCES = arch/arm64/boot.S
 
 C_OBJECTS = $(patsubst %.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
