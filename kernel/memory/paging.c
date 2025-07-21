@@ -4,7 +4,7 @@
 #include <uart.h>
 
 // Statically allocated page tables (must be 4KB aligned)
-// We allocate enough for initial kernel mappings
+// Allocate enough for initial kernel mappings
 __attribute__((aligned(4096))) static pgd_t kernel_pgd[PTRS_PER_TABLE];
 __attribute__((aligned(4096))) static pud_t kernel_pud[PTRS_PER_TABLE];
 __attribute__((aligned(4096))) static pmd_t kernel_pmd[PTRS_PER_TABLE];
@@ -13,7 +13,6 @@ __attribute__((aligned(4096))) static pte_t kernel_pte[PTRS_PER_TABLE];
 // Additional page tables for device mappings
 __attribute__((aligned(4096))) static pmd_t device_pmd[PTRS_PER_TABLE];
 
-// Helper function to print hex value with label
 static void print_hex_val(const char* label, uint64_t val) {
     uart_puts(label);
     uart_puts(": 0x");
@@ -21,7 +20,6 @@ static void print_hex_val(const char* label, uint64_t val) {
     uart_puts("\n");
 }
 
-// Clear a page table
 static void clear_page_table(void* table) {
     uint64_t* ptr = (uint64_t*)table;
     for (int i = 0; i < PTRS_PER_TABLE; i++) {
@@ -43,9 +41,10 @@ void map_page(uint64_t va, uint64_t pa, uint64_t attrs) {
     uint32_t pmd_idx = PMD_INDEX(va);
     uint32_t pte_idx = PTE_INDEX(va);
     
-    // For now, we use pre-allocated static tables
-    // In a real implementation, we'd allocate these dynamically
-    
+    // For now, use pre-allocated static tables
+    // In a real implementation, allocate these dynamically
+    // TODO: dynamic page table allocation 
+
     // Ensure PGD entry exists
     if (!(kernel_pgd[pgd_idx] & PTE_VALID)) {
         kernel_pgd[pgd_idx] = ((uint64_t)kernel_pud) | PTE_TYPE_TABLE;

@@ -9,7 +9,6 @@
 #define PTRS_PER_TABLE          512
 #define PGDIR_INDEX(va)         (((va) >> PGDIR_SHIFT) & (PTRS_PER_TABLE - 1))
 
-// Helper function to print hex value with label
 static void print_hex_val(const char* label, uint64_t val) {
     uart_puts(label);
     uart_puts(": 0x");
@@ -17,15 +16,13 @@ static void print_hex_val(const char* label, uint64_t val) {
     uart_puts("\n");
 }
 
-// Initialize MMU structures
 void mmu_init(void) {
     uart_puts("\n=== MMU Initialization ===\n");
     
-    // Initialize page tables
     paging_init();
 }
 
-// Enable MMU - this will be called from assembly
+// Enable MMU (this will be called from asm 
 void enable_mmu(void) {
     uint64_t mair_val;
     uint64_t tcr_val;
@@ -54,7 +51,7 @@ void enable_mmu(void) {
               TCR_IRGN0_WBWA |          // Inner write-back write-allocate for TTBR0
               TCR_IRGN1_WBWA |          // Inner write-back write-allocate for TTBR1
               TCR_IPS_48BIT |           // 48-bit intermediate physical address
-              TCR_EPD1_DISABLE |        // Disable TTBR1 walks (we're not using upper half yet)
+              TCR_EPD1_DISABLE |        // Disable TTBR1 walks (not using upper half yet)
               TCR_AS_16BIT;             // 16-bit ASID size
     
     __asm__ volatile("msr tcr_el1, %0" : : "r" (tcr_val));
@@ -83,7 +80,7 @@ void enable_mmu(void) {
     print_hex_val("SCTLR_EL1 before", sctlr_val);
     
     // Don't enable caches yet - just MMU
-    // Make sure we're only setting the M bit
+    // Make sure only setting the M bit
     uint64_t new_sctlr = sctlr_val | SCTLR_M;
     uart_puts("New SCTLR_EL1 will be: ");
     uart_puthex(new_sctlr);

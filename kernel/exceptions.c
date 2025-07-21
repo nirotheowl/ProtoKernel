@@ -14,7 +14,6 @@ static void print_hex(const char* label, uint64_t value) {
     uart_puts("\n");
 }
 
-// Get exception class string
 const char* get_exception_class_string(uint64_t esr) {
     uint32_t ec = (esr & ESR_EC_MASK) >> ESR_EC_SHIFT;
     
@@ -52,7 +51,6 @@ const char* get_exception_class_string(uint64_t esr) {
     }
 }
 
-// Get fault status string
 const char* get_fault_status_string(uint64_t fsc) {
     switch (fsc & 0x3F) {
         case FSC_ADDR_SIZE_L0:        return "Address size fault, level 0";
@@ -86,7 +84,6 @@ const char* get_fault_status_string(uint64_t fsc) {
     }
 }
 
-// Dump exception context
 void dump_exception_context(struct exception_context *ctx) {
     uart_puts("\n=== Exception Context ===\n");
     
@@ -152,6 +149,7 @@ void sync_exception_handler(struct exception_context *ctx) {
             uart_puts("\nData abort - possible page fault\n");
             // Here you would implement page fault handling
             // For now, just halt
+            // FIXME: implement feature 
             break;
             
         case ESR_EC_INST_ABORT_EL0:
@@ -159,6 +157,7 @@ void sync_exception_handler(struct exception_context *ctx) {
             uart_puts("\nInstruction abort - possible page fault\n");
             // Here you would implement page fault handling
             // For now, just halt
+            // FIXME: implement feature
             break;
             
         case ESR_EC_SVC_A64:

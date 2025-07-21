@@ -4,7 +4,6 @@
 #include <memory/mmu.h>
 #include <exceptions.h>
 
-// Global debug flags for GDB inspection
 volatile uint32_t mmu_enabled_flag = 0;
 volatile uint32_t kernel_running_flag = 0;
 volatile uint32_t debug_counter = 0;
