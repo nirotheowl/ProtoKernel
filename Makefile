@@ -77,7 +77,7 @@ run: $(KERNEL_BIN)
 qemu: run
 
 .PHONY: debug
-debug: $(KERNEL_BIN)
+debug: $(KERNEL_ELF)
 	./scripts/run-debug.sh
 
 .PHONY: display

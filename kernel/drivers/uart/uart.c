@@ -11,8 +11,20 @@ void uart_init(void) {
 }
 
 void uart_putc(char c) {
-    while (UART0_FR & (1 << 5));
+    // Wait for transmit FIFO to not be full
+    while (UART0_FR & (1 << 5)) {
+        __asm__ volatile("nop");
+    }
+    
     UART0_DR = c;
+    
+    // Ensure the write completes to device memory
+    __asm__ volatile("dsb sy");
+    
+    // Wait for transmit to complete
+    while (UART0_FR & (1 << 3)) {
+        __asm__ volatile("nop");
+    }
 }
 
 void uart_puts(const char* str) {

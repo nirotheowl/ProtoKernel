@@ -54,6 +54,20 @@ el2_entry:
     eret
 
 el1_entry:
+    // Disable MMU and caches before setup
+    mrs x0, sctlr_el1
+    bic x0, x0, #(1 << 0)   // Clear M bit (MMU)
+    bic x0, x0, #(1 << 2)   // Clear C bit (D-cache)
+    bic x0, x0, #(1 << 12)  // Clear I bit (I-cache)
+    msr sctlr_el1, x0
+    isb
+
+    // Invalidate caches and TLB
+    ic iallu                // Invalidate all instruction caches
+    tlbi vmalle1           // Invalidate all TLB entries
+    dsb nsh
+    isb
+
     // Set up stack pointer
     ldr x0, =_stack_top
     mov sp, x0
