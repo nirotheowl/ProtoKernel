@@ -4,7 +4,7 @@
 #include <uart.h>
 #include <memory/mmu.h>
 #include <memory/paging.h>
-#include <exceptions.h>
+#include <exceptions/exceptions.h>
 #include <tests/mmu_tests.h>
 
 void kernel_main(void* dtb) {
