@@ -8,6 +8,11 @@
 #define PAGE_SIZE               (1UL << PAGE_SHIFT)    // 4KB
 #define PAGE_MASK               (~(PAGE_SIZE - 1))
 
+// Section (2MB) size
+#define SECTION_SHIFT           21
+#define SECTION_SIZE            (1UL << SECTION_SHIFT) // 2MB
+#define SECTION_MASK            (~(SECTION_SIZE - 1))
+
 // Number of entries per page table
 #define PTRS_PER_TABLE          512
 
@@ -75,7 +80,9 @@ typedef uint64_t pgd_t;
 
 // Function declarations for paging operations
 void map_page(uint64_t va, uint64_t pa, uint64_t attrs);
+void map_pages(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs);
 void map_range(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs);
+void map_memory(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs);
 void paging_init(void);
 
 // Get the kernel page directory base address

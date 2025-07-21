@@ -10,10 +10,7 @@ if [ ! -f "$KERNEL_BIN" ]; then
     exit 1
 fi
 
-echo "Starting QEMU with display (SDL window)..."
 echo "Press Ctrl-Alt-G to release mouse grab"
-echo "Press Ctrl-Alt-F to toggle fullscreen"
-echo ""
 
 qemu-system-aarch64 \
     -M virt \

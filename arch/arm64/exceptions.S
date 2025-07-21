@@ -46,67 +46,68 @@ exception_vectors:
 
 // Macro to save context
 .macro save_context
-    // Save x0-x29 and x30 (lr)
-    stp x0, x1, [sp, #-16]!
-    stp x2, x3, [sp, #-16]!
-    stp x4, x5, [sp, #-16]!
-    stp x6, x7, [sp, #-16]!
-    stp x8, x9, [sp, #-16]!
-    stp x10, x11, [sp, #-16]!
-    stp x12, x13, [sp, #-16]!
-    stp x14, x15, [sp, #-16]!
-    stp x16, x17, [sp, #-16]!
-    stp x18, x19, [sp, #-16]!
-    stp x20, x21, [sp, #-16]!
-    stp x22, x23, [sp, #-16]!
-    stp x24, x25, [sp, #-16]!
-    stp x26, x27, [sp, #-16]!
-    stp x28, x29, [sp, #-16]!
-    str x30, [sp, #-8]!
+    // Allocate space for full exception context (288 bytes)
+    sub sp, sp, #288
     
-    // Save SP before exception
-    mrs x0, sp_el0
-    str x0, [sp, #-8]!
+    // Save general purpose registers first
+    stp x0, x1, [sp, #32]
+    stp x2, x3, [sp, #48]
+    stp x4, x5, [sp, #64]
+    stp x6, x7, [sp, #80]
+    stp x8, x9, [sp, #96]
+    stp x10, x11, [sp, #112]
+    stp x12, x13, [sp, #128]
+    stp x14, x15, [sp, #144]
+    stp x16, x17, [sp, #160]
+    stp x18, x19, [sp, #176]
+    stp x20, x21, [sp, #192]
+    stp x22, x23, [sp, #208]
+    stp x24, x25, [sp, #224]
+    stp x26, x27, [sp, #240]
+    stp x28, x29, [sp, #256]
+    str x30, [sp, #272]
     
-    // Save exception registers
-    mrs x0, elr_el1
-    mrs x1, spsr_el1
-    mrs x2, esr_el1
-    mrs x3, far_el1
-    stp x0, x1, [sp, #-16]!
-    stp x2, x3, [sp, #-16]!
+    // Save original SP (before we modified it)
+    add x21, sp, #288
+    str x21, [sp, #280]
+    
+    // Now save exception system registers
+    mrs x22, elr_el1
+    mrs x23, spsr_el1
+    mrs x24, esr_el1
+    mrs x25, far_el1
+    stp x22, x23, [sp, #0]
+    stp x24, x25, [sp, #16]
 .endm
 
 // Macro to restore context
 .macro restore_context
-    // Restore exception registers
-    ldp x2, x3, [sp], #16
-    ldp x0, x1, [sp], #16
-    msr elr_el1, x0
-    msr spsr_el1, x1
+    // Restore exception registers first
+    ldp x21, x22, [sp, #0]
+    msr elr_el1, x21
+    msr spsr_el1, x22
     // ESR and FAR are read-only, don't restore
     
-    // Restore SP before exception
-    ldr x0, [sp], #8
-    msr sp_el0, x0
+    // Restore general purpose registers
+    ldp x0, x1, [sp, #32]
+    ldp x2, x3, [sp, #48]
+    ldp x4, x5, [sp, #64]
+    ldp x6, x7, [sp, #80]
+    ldp x8, x9, [sp, #96]
+    ldp x10, x11, [sp, #112]
+    ldp x12, x13, [sp, #128]
+    ldp x14, x15, [sp, #144]
+    ldp x16, x17, [sp, #160]
+    ldp x18, x19, [sp, #176]
+    ldp x20, x21, [sp, #192]
+    ldp x22, x23, [sp, #208]
+    ldp x24, x25, [sp, #224]
+    ldp x26, x27, [sp, #240]
+    ldp x28, x29, [sp, #256]
+    ldr x30, [sp, #272]
     
-    // Restore x30 and x0-x29
-    ldr x30, [sp], #8
-    ldp x28, x29, [sp], #16
-    ldp x26, x27, [sp], #16
-    ldp x24, x25, [sp], #16
-    ldp x22, x23, [sp], #16
-    ldp x20, x21, [sp], #16
-    ldp x18, x19, [sp], #16
-    ldp x16, x17, [sp], #16
-    ldp x14, x15, [sp], #16
-    ldp x12, x13, [sp], #16
-    ldp x10, x11, [sp], #16
-    ldp x8, x9, [sp], #16
-    ldp x6, x7, [sp], #16
-    ldp x4, x5, [sp], #16
-    ldp x2, x3, [sp], #16
-    ldp x0, x1, [sp], #16
+    // Restore stack pointer
+    add sp, sp, #288
 .endm
 
 // Current EL with SP0 handlers
