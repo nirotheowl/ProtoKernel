@@ -1,24 +1,17 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <memory/paging.h>
+#include <memory/pmm.h>
+#include <memory/memmap.h>
 #include <uart.h>
 
-// Statically allocated page tables (must be 4KB aligned)
-// Allocate enough for initial kernel mappings
-__attribute__((aligned(4096))) static pgd_t kernel_pgd[PTRS_PER_TABLE];
-__attribute__((aligned(4096))) static pud_t kernel_pud[PTRS_PER_TABLE];
-__attribute__((aligned(4096))) static pmd_t kernel_pmd[PTRS_PER_TABLE];
-__attribute__((aligned(4096))) static pte_t kernel_pte[PTRS_PER_TABLE];
+// Initial page table for boot - we need at least one set to get started
+// After PMM is initialized, we'll allocate new ones dynamically
+__attribute__((aligned(4096))) static pgd_t boot_pgd[PTRS_PER_TABLE];
 
-// Additional page tables for device mappings
-__attribute__((aligned(4096))) static pmd_t device_pmd[PTRS_PER_TABLE];
+// Keep track of allocated page tables for statistics
+static uint64_t page_tables_allocated = 0;
 
-static void print_hex_val(const char* label, uint64_t val) {
-    uart_puts(label);
-    uart_puts(": 0x");
-    uart_puthex(val);
-    uart_puts("\n");
-}
 
 static void clear_page_table(void* table) {
     uint64_t* ptr = (uint64_t*)table;
@@ -27,52 +20,65 @@ static void clear_page_table(void* table) {
     }
 }
 
+// Allocate a new page table
+static void* alloc_page_table(void) {
+    uint64_t pa = pmm_alloc_page_table();
+    if (!pa) {
+        return NULL;
+    }
+    
+    page_tables_allocated++;
+    
+    // Page is already cleared by PMM
+    return (void*)pa;
+}
 
-// Map a single 4KB page
+// Get or allocate a page table entry
+static uint64_t* get_or_alloc_table_entry(uint64_t* parent_entry, const char* level_name) {
+    (void)level_name;  // Unused in production
+    
+    if (*parent_entry & PTE_VALID) {
+        // Table already exists
+        return (uint64_t*)(*parent_entry & PAGE_MASK);
+    }
+    
+    // Need to allocate a new table
+    void* new_table = alloc_page_table();
+    if (!new_table) {
+        return NULL;
+    }
+    
+    // Install the new table
+    *parent_entry = ((uint64_t)new_table) | PTE_TYPE_TABLE;
+    
+    return (uint64_t*)new_table;
+}
+
+// Map a single 4KB page with dynamic allocation
 void map_page(uint64_t va, uint64_t pa, uint64_t attrs) {
     uint32_t pgd_idx = PGDIR_INDEX(va);
     uint32_t pud_idx = PUD_INDEX(va);
     uint32_t pmd_idx = PMD_INDEX(va);
     uint32_t pte_idx = PTE_INDEX(va);
     
-    // For now, we have a limitation: all 4KB pages must be in the same 2MB region
-    // as we only have one static PTE table. In a real implementation, allocate dynamically.
+    // Get or allocate PUD
+    pud_t* pud = get_or_alloc_table_entry(&boot_pgd[pgd_idx], "PUD");
+    if (!pud) return;
     
-    // Ensure PGD entry exists
-    if (!(kernel_pgd[pgd_idx] & PTE_VALID)) {
-        // All mappings use kernel_pud
-        kernel_pgd[pgd_idx] = ((uint64_t)kernel_pud) | PTE_TYPE_TABLE;
-    }
-    
-    // Get PUD entry
-    pud_t* pud = (pud_t*)(kernel_pgd[pgd_idx] & PAGE_MASK);
-    
-    // Ensure PUD entry exists
-    if (!(pud[pud_idx] & PTE_VALID)) {
-        // Use kernel_pmd for now (in future, allocate dynamically)
-        pud[pud_idx] = ((uint64_t)kernel_pmd) | PTE_TYPE_TABLE;
-    }
-    
-    // Get PMD entry
-    pmd_t* pmd = (pmd_t*)(pud[pud_idx] & PAGE_MASK);
+    // Get or allocate PMD
+    pmd_t* pmd = get_or_alloc_table_entry(&pud[pud_idx], "PMD");
+    if (!pmd) return;
     
     // Check if PMD already has a block mapping
     if ((pmd[pmd_idx] & PTE_VALID) && !(pmd[pmd_idx] & PTE_TABLE)) {
-        // There's already a 2MB block mapping here
-        uart_puts("Warning: PMD already has block mapping, cannot create 4KB page\n");
-        return;
+        return;  // Cannot create 4KB page in 2MB block region
     }
     
-    // Ensure PMD points to PTE table
-    if (!(pmd[pmd_idx] & PTE_VALID)) {
-        // Use kernel_pte for now (in future, allocate dynamically)
-        pmd[pmd_idx] = ((uint64_t)kernel_pte) | PTE_TYPE_TABLE;
-    }
+    // Get or allocate PTE table
+    pte_t* pte = get_or_alloc_table_entry(&pmd[pmd_idx], "PTE");
+    if (!pte) return;
     
-    // Get PTE table
-    pte_t* pte = (pte_t*)(pmd[pmd_idx] & PAGE_MASK);
-    
-    // Set PTE entry - ensure page attributes are correct
+    // Set PTE entry
     pte[pte_idx] = (pa & PAGE_MASK) | attrs | PTE_AF | PTE_VALID;
 }
 
@@ -91,34 +97,20 @@ void map_pages(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs) {
 void map_range(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs) {
     uint64_t end_va = va + size;
     
-    // For simplicity, use 2MB blocks for now
     while (va < end_va) {
         uint32_t pgd_idx = PGDIR_INDEX(va);
         uint32_t pud_idx = PUD_INDEX(va);
         uint32_t pmd_idx = PMD_INDEX(va);
         
-        // Ensure PGD entry exists
-        if (!(kernel_pgd[pgd_idx] & PTE_VALID)) {
-            kernel_pgd[pgd_idx] = ((uint64_t)kernel_pud) | PTE_TYPE_TABLE;
-        }
+        // Get or allocate PUD
+        pud_t* pud = get_or_alloc_table_entry(&boot_pgd[pgd_idx], "PUD");
+        if (!pud) return;
         
-        // Ensure PUD entry exists
-        if (!(kernel_pud[pud_idx] & PTE_VALID)) {
-            // For device mappings, use device_pmd
-            // Check if this is device memory by looking at the attribute index bits
-            uint64_t attr_idx = (attrs >> 2) & 0x7;
-            if (attr_idx == MT_DEVICE_nGnRnE || attr_idx == MT_DEVICE_nGnRE) {
-                kernel_pud[pud_idx] = ((uint64_t)device_pmd) | PTE_TYPE_TABLE;
-            } else {
-                kernel_pud[pud_idx] = ((uint64_t)kernel_pmd) | PTE_TYPE_TABLE;
-            }
-        }
+        // Get or allocate PMD
+        pmd_t* pmd = get_or_alloc_table_entry(&pud[pud_idx], "PMD");
+        if (!pmd) return;
         
         // Create 2MB block mapping at PMD level
-        // Check if this is device memory by looking at the attribute index bits
-        uint64_t attr_idx = (attrs >> 2) & 0x7;
-        pmd_t* pmd = (attr_idx == MT_DEVICE_nGnRnE || attr_idx == MT_DEVICE_nGnRE) ? device_pmd : kernel_pmd;
-        // For 2MB blocks, bits [47:21] contain the physical address
         uint64_t block_addr = pa & 0xFFFFFFFFFFE00000ULL;
         pmd[pmd_idx] = block_addr | attrs | PTE_TYPE_BLOCK | PTE_AF;
         
@@ -127,34 +119,19 @@ void map_range(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs) {
     }
 }
 
-// Initialize page tables
+// Initialize page tables with dynamic allocation
 void paging_init(void) {
-    uart_puts("\n=== Page Table Initialization ===\n");
-    
-    // Clear all page tables
-    uart_puts("Clearing page tables...\n");
-    clear_page_table(kernel_pgd);
-    clear_page_table(kernel_pud);
-    clear_page_table(kernel_pmd);
-    clear_page_table(kernel_pte);
-    clear_page_table(device_pmd);
-    
-    // Print page table addresses
-    print_hex_val("PGD address", (uint64_t)kernel_pgd);
-    print_hex_val("PUD address", (uint64_t)kernel_pud);
-    print_hex_val("PMD address", (uint64_t)kernel_pmd);
-    print_hex_val("PTE address", (uint64_t)kernel_pte);
+    // Clear boot PGD
+    clear_page_table(boot_pgd);
     
     // Identity map kernel code and data 
-    // We need to map from 0x40000000 to cover the page tables in BSS at 0x40088000
-    uart_puts("\nIdentity mapping kernel and page tables...\n");
     map_range(0x40000000, 0x40000000, 0x400000, PTE_KERNEL_BLOCK);
     
-    // Map UART as device memory (2MB block to cover the region)
-    uart_puts("\nMapping UART device memory...\n");
-    map_range(0x09000000, 0x09000000, 0x200000, PTE_DEVICE_BLOCK);
+    // Map additional memory for allocator (up to 256MB)
+    map_range(0x40400000, 0x40400000, 0xFC00000, PTE_KERNEL_BLOCK);  // Map up to 0x50000000
     
-    uart_puts("\nPage table setup complete!\n");
+    // Map UART as device memory
+    map_range(0x09000000, 0x09000000, 0x200000, PTE_DEVICE_BLOCK);
 }
 
 // Map memory intelligently using the best page size
@@ -173,29 +150,20 @@ void map_memory(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs) {
     while ((end_va - va) >= SECTION_SIZE && 
            !(va & (SECTION_SIZE - 1)) && 
            !(pa & (SECTION_SIZE - 1))) {
-        // Use existing block mapping code
+        
         uint32_t pgd_idx = PGDIR_INDEX(va);
         uint32_t pud_idx = PUD_INDEX(va);
         uint32_t pmd_idx = PMD_INDEX(va);
         
-        // Ensure PGD entry exists
-        if (!(kernel_pgd[pgd_idx] & PTE_VALID)) {
-            kernel_pgd[pgd_idx] = ((uint64_t)kernel_pud) | PTE_TYPE_TABLE;
-        }
+        // Get or allocate PUD
+        pud_t* pud = get_or_alloc_table_entry(&boot_pgd[pgd_idx], "PUD");
+        if (!pud) return;
         
-        // Ensure PUD entry exists
-        if (!(kernel_pud[pud_idx] & PTE_VALID)) {
-            uint64_t attr_idx = (attrs >> 2) & 0x7;
-            if (attr_idx == MT_DEVICE_nGnRnE || attr_idx == MT_DEVICE_nGnRE) {
-                kernel_pud[pud_idx] = ((uint64_t)device_pmd) | PTE_TYPE_TABLE;
-            } else {
-                kernel_pud[pud_idx] = ((uint64_t)kernel_pmd) | PTE_TYPE_TABLE;
-            }
-        }
+        // Get or allocate PMD
+        pmd_t* pmd = get_or_alloc_table_entry(&pud[pud_idx], "PMD");
+        if (!pmd) return;
         
         // Create 2MB block mapping
-        uint64_t attr_idx = (attrs >> 2) & 0x7;
-        pmd_t* pmd = (attr_idx == MT_DEVICE_nGnRnE || attr_idx == MT_DEVICE_nGnRE) ? device_pmd : kernel_pmd;
         pmd[pmd_idx] = (pa & 0xFFFFFFFFFFE00000ULL) | attrs | PTE_TYPE_BLOCK | PTE_AF;
         
         va += SECTION_SIZE;
@@ -212,5 +180,6 @@ void map_memory(uint64_t va, uint64_t pa, uint64_t size, uint64_t attrs) {
 
 // Get the kernel page directory base address
 pgd_t* get_kernel_pgd(void) {
-    return kernel_pgd;
+    return boot_pgd;
 }
+

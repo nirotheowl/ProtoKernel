@@ -7,10 +7,12 @@ SECTIONS
     /* We'll use 0x40200000 as our base address */
     . = 0x40200000;
 
+    __text_start = .;
     .text : {
         KEEP(*(.text.boot))
         *(.text .text.*)
     }
+    __text_end = .;
 
     . = ALIGN(4096);
     .rodata : {
@@ -18,9 +20,11 @@ SECTIONS
     }
 
     . = ALIGN(4096);
+    __data_start = .;
     .data : {
         *(.data .data.*)
     }
+    __data_end = .;
 
     . = ALIGN(4096);
     __bss_start = .;
