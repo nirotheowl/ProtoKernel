@@ -5,8 +5,8 @@
 #include <memory/memmap.h>
 #include <uart.h>
 
-// Initial page table for boot - we need at least one set to get started
-// After PMM is initialized, we'll allocate new ones dynamically
+// Initial page table for boot - need at least one set to get started
+// After PMM is initialized, allocate new ones dynamically
 __attribute__((aligned(4096))) static pgd_t boot_pgd[PTRS_PER_TABLE];
 
 // Keep track of allocated page tables for statistics

@@ -8,7 +8,7 @@
 #define PMM_PAGE_SIZE 4096
 #define PMM_PAGE_SHIFT 12
 
-// Maximum memory we'll support (1GB for now)
+// Maximum memory support (1GB for now)
 #define PMM_MAX_MEMORY (1ULL << 30)  
 #define PMM_MAX_PAGES (PMM_MAX_MEMORY / PMM_PAGE_SIZE)
 

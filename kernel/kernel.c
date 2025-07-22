@@ -45,7 +45,7 @@ void kernel_main(void* dtb) {
     memmap_init();
     
     // Initialize Physical Memory Manager
-    // Assume 256MB of RAM for now (we'll improve this later with device tree parsing)
+    // Assume 256MB of RAM for now (improve this later with device tree parsing)
     pmm_init((uint64_t)&_kernel_end, 256 * 1024 * 1024);
     
     

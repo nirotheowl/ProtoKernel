@@ -7,7 +7,7 @@
 
 void uart_init(void) {
     // PL011 UART is already initialized by QEMU
-    // In a real implementation, we would configure baud rate, data bits, etc.
+    // In a real implementation, we'd configure baud rate, data bits, etc.
 }
 
 void uart_putc(char c) {

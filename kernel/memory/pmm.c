@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 // Bitmap to track page allocation (1 bit per page)
-// For 1GB of memory with 4KB pages, we need 32KB for the bitmap
+// For 1GB of memory with 4KB pages, needs 32KB for the bitmap
 static uint64_t pmm_bitmap[PMM_MAX_PAGES / 64];  // 64 bits per uint64_t
 
 // Memory statistics
