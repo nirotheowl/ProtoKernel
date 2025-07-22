@@ -18,5 +18,5 @@ qemu-system-aarch64 \
     -m 1G \
     -kernel "$KERNEL_BIN" \
     -serial stdio \
-    -device virtio-gpu-device \
+    -device virtio-gpu \
     -display sdl
