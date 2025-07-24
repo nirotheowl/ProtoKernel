@@ -2,7 +2,7 @@ HIGHER-HALF KERNEL IMPLEMENTATION PROGRESS
 ==========================================
 
 Last Updated: 2025-07-24
-Current Status: Part A (Identity Mapping) COMPLETE
+Current Status: Step 2B (Higher-Half Mapping) COMPLETE - Both TTBR0 and TTBR1 page tables verified
 
 ## Overview
 We are implementing a higher-half kernel for 64-bit ARM (AArch64). The kernel will be loaded at a low physical address but run at high virtual addresses (0xFFFF_xxxx_xxxx_xxxx range).
@@ -74,13 +74,12 @@ L0[0] -> L1 table
   - ORGN0/IRGN0 = 1 (Write-back, write-allocate)
 - **SCTLR_EL1**: M=1, C=1, I=1 (MMU, D-cache, I-cache enabled)
 
-### 4. Test Results
+### 4. Test Results (Initial Identity Mapping)
 - Page tables correctly set up at 0x40077000
 - Identity mapping verified for kernel region
 - MMU successfully enabled
 - Execution continues after MMU enable
-- Currently hangs before reaching kernel_main
-- When kernel_main is reached (in earlier tests), it attempts to access virtual addresses which fail (expected - no higher-half mapping yet)
+- Reaches kernel_main at physical address 0x40081ae0
 
 ## Completed Steps
 
@@ -113,28 +112,47 @@ The kernel now:
 - Higher-half page tables ready but not yet used for execution
 - Can reach kernel_main successfully
 
-## Verification Results (2025-07-24)
+## Detailed Verification Results (2025-07-24)
 
-Comprehensive testing confirms:
-1. Identity mapping works correctly
-   - Can read/write all memory regions
-   - Page tables at 0x40077000 are valid
-   - Execution proceeds normally
+### 1. Page Table Structure Verification
+Using comprehensive-mapping-test.gdb confirmed:
+- **TTBR0 (Identity Mapping)**:
+  - L0 at 0x40077000: Entry valid, points to L1 at 0x40078000
+  - L1[0] -> L2 at 0x40079000 (covers 0-512MB)
+  - L1[1] -> L2 at 0x4007a000 (covers 512MB-1GB, includes kernel)
+  - L2 entries: 2MB blocks with correct attributes (0x701)
+  - Successfully maps 0x40080000 -> 0x40080000
 
-2. Higher-half mapping is set up correctly
-   - TTBR1_EL1 points to 0x4007b000
-   - L0[0x1FE] entry is valid and points to L1
-   - Full page table hierarchy verified
-   - Maps virtual 0xFFFF000040080000 to physical 0x40080000
+- **TTBR1 (Higher-Half Mapping)**:
+  - L0 at 0x4007b000: Entry at index 0x1FE valid
+  - L0[0x1FE] -> L1 at 0x4007c000
+  - L1[1] -> L2 at 0x4007d000
+  - L2[0] maps 0xFFFF000040080000 -> 0x40080000
+  - 32 x 2MB blocks allocated (64MB total)
 
-3. Minor issue found:
-   - Register x19 (DTB pointer) gets overwritten during page table setup
-   - This causes kernel_main to receive wrong parameter
-   - Not critical for current implementation phase
+### 2. MMU Enable and Execution Flow
+Using test-mmu-to-kernel.gdb confirmed:
+- MMU enables successfully at 0x400801f8
+- SCTLR_EL1 shows M=1, C=1, I=1 (MMU, caches enabled)
+- Execution continues normally after ISB
+- Stack pointer set up at 0x40070000
+- Successfully reaches kernel_main jump at 0x40080210
 
-4. Expected behavior confirmed:
-   - kernel_main faults when accessing virtual addresses
-   - This is correct - we haven't jumped to higher half yet
+### 3. kernel_main Virtual Address Access
+Using test-kernel-main-access.gdb revealed:
+- kernel_main starts execution at 0x40081ae0
+- Executes initial stack operations successfully
+- At 0x40081af4: Attempts to load string from 0xffff0000400842e8
+- This is a string constant in .rodata section
+- Access causes exception (PC jumps to 0x200)
+- This is expected - kernel compiled for virtual addresses but running at physical
+
+### 4. Issues Identified
+- **Register Preservation**: x19 (DTB pointer) overwritten during page table setup
+  - x19 is reused for TTBR1 L0 table pointer
+  - kernel_main receives 0x4007b000 instead of DTB address
+- **Exception Vectors**: Currently unmapped at 0x200
+  - Need proper exception vector setup for debugging
 
 ## Next Steps for Higher-Half Implementation
 
@@ -153,19 +171,17 @@ Comprehensive testing confirms:
 ## Current Issues
 
 ### Virtual Address Access in kernel_main
-After enabling the MMU with identity mapping, the kernel successfully:
-- Enables the MMU with identity mapping
-- Sets up the stack pointer at 0x40070000
-- Jumps to kernel_main at physical address 0x40081a80
+The kernel successfully reaches kernel_main but faults on first virtual address access:
+- kernel_main executes at physical address 0x40081ae0 
+- Initial function prologue executes correctly (stack frame setup)
+- At instruction 0x40081af4: `ldr x0, [x0, #3080]` tries to load from 0xffff0000400842e8
+- This address points to a string constant in the .rodata section
+- Exception occurs because we're running at physical addresses but accessing virtual
+- PC jumps to exception vector at 0x200 (also unmapped)
 
-However, kernel_main immediately faults when trying to load a string constant because:
-- The kernel is compiled to use virtual addresses (0xFFFF000040200000 range)
-- kernel_main tries to load from address 0xffff0000402042e8 (a string constant)
-- We only have identity mapping (PA = VA), no higher-half mapping yet
-- The access to unmapped virtual address causes an exception (jumps to 0x200)
-
-This is expected behavior since the kernel is compiled for higher-half addresses but we haven't 
-implemented that mapping yet. The solution is to implement Step 2B: Create Higher-Half Mapping.
+This is expected and correct behavior - the kernel is compiled for higher-half virtual addresses
+but we haven't yet jumped to the higher half. The page tables are ready; we just need to
+implement the jump to virtual addresses before calling kernel_main.
 
 ## Important Notes
 
@@ -205,7 +221,14 @@ Current implementation uses simple attributes:
 - scripts/: Various GDB test scripts for verification
 
 ## Testing
-Run with: `./scripts/debug-qemu.sh scripts/verify-identity-map.gdb`
-Current kernel size: 40960 bytes
+The `debug-qemu.sh` script provides comprehensive debugging capabilities:
+- `./scripts/debug-qemu.sh scripts/comprehensive-mapping-test.gdb` - Full page table verification
+- `./scripts/debug-qemu.sh scripts/test-mmu-to-kernel.gdb` - MMU enable and execution flow
+- `./scripts/debug-qemu.sh scripts/test-kernel-main-access.gdb` - Virtual address access testing
 
-The identity mapping phase is complete and working correctly. Ready for higher-half mapping implementation.
+See DEBUGGING.txt for detailed usage instructions.
+
+## Summary
+Both identity mapping (TTBR0) and higher-half mapping (TTBR1) are correctly implemented and verified.
+The kernel successfully enables the MMU and reaches kernel_main. The next step is to implement
+the jump to higher-half addresses before calling kernel_main (Step 3).
