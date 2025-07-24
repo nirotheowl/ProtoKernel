@@ -214,29 +214,178 @@ el1_entry:
      * 3. Only use virtual addresses after MMU is enabled
      */
 
-    // Set up stack pointer using physical address
-    // We'll place stack just before our code (grows down)
-    adr x0, _start              // Get physical address of _start
-    sub x0, x0, #0x4000         // 16KB stack below code
+    /*
+     * Part A: Create Identity Mapping Page Tables
+     * ===========================================
+     * We'll create a simple identity mapping for the bootstrap phase.
+     * This maps physical addresses to themselves in TTBR0.
+     */
+
+    // First, define some constants for page table entries
+    // Page table entry bits
+    .equ ATTR_MAIR_IDX_NORMAL, 0x0 << 2  // MAIR index 0 (normal memory)
+    .equ ATTR_MAIR_IDX_DEVICE, 0x1 << 2  // MAIR index 1 (device memory)
+    .equ ATTR_AP_RW_EL1, 0x0 << 6        // Read-write at EL1
+    .equ ATTR_AP_RO_EL1, 0x2 << 6        // Read-only at EL1
+    .equ ATTR_SH_INNER, 0x3 << 8         // Inner shareable
+    .equ ATTR_AF, 0x1 << 10               // Access flag
+    .equ ATTR_nG, 0x1 << 11               // Not global
+    .equ ATTR_UXN, 0x1 << 54              // Unprivileged execute never
+    .equ ATTR_PXN, 0x1 << 53              // Privileged execute never
+
+    // Entry types
+    .equ TABLE_DESC, 0x3                  // Table descriptor
+    .equ BLOCK_DESC, 0x1                  // Block descriptor
+    .equ PAGE_DESC, 0x3                   // Page descriptor (L3 only)
+
+    // Page sizes
+    .equ PAGE_SIZE, 4096
+    .equ PAGE_SHIFT, 12
+    .equ TABLE_SHIFT, 9                   // 512 entries per table
+    .equ TABLE_ENTRIES, 512
+
+    // Level shifts for 4KB pages with 48-bit VA
+    .equ L0_SHIFT, 39                     // Bits 47:39
+    .equ L1_SHIFT, 30                     // Bits 38:30
+    .equ L2_SHIFT, 21                     // Bits 29:21
+    .equ L3_SHIFT, 12                     // Bits 20:12
+
+    // Block/page sizes at each level
+    .equ L1_BLOCK_SIZE, 0x40000000        // 1GB
+    .equ L2_BLOCK_SIZE, 0x200000          // 2MB
+    .equ L3_PAGE_SIZE, 0x1000             // 4KB
+
+    // Calculate page table addresses
+    // We'll place page tables before kernel start
+    mov x26, x28                          // x28 has our physical base
+    sub x26, x26, #(9 * PAGE_SIZE)       // 9 pages for tables (added one for second L2)
+    
+    // Clear page table memory first
+    mov x0, x26                           // Start address
+    mov x1, #(9 * PAGE_SIZE)              // Size to clear
+    bl func_zero_memory                   // Call helper function
+
+    // Set up page table pointers
+    mov x25, x26                          // x25 = current free page
+    
+    // TTBR0 L0 table
+    mov x23, x25                          // x23 = L0 table for TTBR0
+    add x25, x25, #PAGE_SIZE
+    
+    // TTBR0 L1 table
+    mov x22, x25                          // x22 = L1 table for TTBR0
+    add x25, x25, #PAGE_SIZE
+    
+    // TTBR0 L2 table for first 512MB
+    mov x21, x25                          // x21 = L2 table for TTBR0
+    add x25, x25, #PAGE_SIZE
+    
+    // TTBR0 L2 table for second 512MB (where kernel is)
+    mov x20, x25                          // x20 = L2 table for second 512MB
+    add x25, x25, #PAGE_SIZE
+
+    // Create identity mapping using 2MB blocks
+    // We'll map the first 1GB of physical memory
+    
+    // Step 1: L0 entry pointing to L1
+    mov x0, x22                           // L1 table physical address
+    orr x0, x0, #TABLE_DESC               // Table descriptor
+    str x0, [x23]                         // Store in L0[0]
+    
+    // Step 2: L1 entries pointing to L2 tables
+    // L1[0] for 0-512MB
+    mov x0, x21                           // L2 table physical address
+    orr x0, x0, #TABLE_DESC               // Table descriptor
+    str x0, [x22]                         // Store in L1[0]
+    
+    // L1[1] for 512MB-1GB (where kernel is)
+    mov x0, x20                           // L2 table physical address
+    orr x0, x0, #TABLE_DESC               // Table descriptor
+    str x0, [x22, #8]                     // Store in L1[1]
+    
+    // Step 3: L2 entries as 2MB blocks
+    // First map 256 * 2MB = 512MB starting from physical address 0
+    mov x0, #0                            // Physical address
+    mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
+    orr x1, x1, #BLOCK_DESC               // Block descriptor
+    mov x2, x21                           // L2 table base
+    mov x3, #256                          // Number of 2MB blocks
+    
+1:  orr x4, x0, x1                        // Combine address and attributes
+    str x4, [x2], #8                      // Store and increment pointer
+    add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block
+    subs x3, x3, #1                       // Decrement counter
+    b.ne 1b
+    
+    // Now map second 512MB (512MB-1GB) 
+    // L1[1] covers 0x40000000-0x7FFFFFFF
+    mov x0, #0x40000000                   // Start at 1GB
+    mov x2, x20                           // L2 table base for second 512MB
+    mov x3, #256                          // Number of 2MB blocks
+    
+2:  orr x4, x0, x1                        // Combine address and attributes
+    str x4, [x2], #8                      // Store and increment pointer
+    add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block
+    subs x3, x3, #1                       // Decrement counter
+    b.ne 2b
+
+    // Configure MAIR_EL1 (Memory Attribute Indirection Register)
+    // Index 0: Normal memory, Inner/Outer Write-Back Non-transient
+    // Index 1: Device memory, nGnRnE
+    mov x0, #0xFF                         // Normal memory attributes
+    msr mair_el1, x0
+
+    // Configure TCR_EL1 (Translation Control Register)
+    // T0SZ = 16 (48-bit addresses)
+    // TG0 = 0 (4KB granule)
+    // SH0 = 3 (Inner shareable)
+    // ORGN0 = 1 (Write-back, write-allocate)
+    // IRGN0 = 1 (Write-back, write-allocate)
+    mov x0, #16                           // T0SZ = 16
+    orr x0, x0, #(0x3 << 12)              // SH0 = Inner shareable
+    orr x0, x0, #(0x1 << 10)              // ORGN0 = WBWA
+    orr x0, x0, #(0x1 << 8)               // IRGN0 = WBWA
+    mov x1, #(0x1 << 37)                  // TBI0 = 1 (top byte ignored)
+    orr x0, x0, x1
+    msr tcr_el1, x0
+
+    // Set TTBR0_EL1 to our L0 table
+    msr ttbr0_el1, x23
+    isb
+
+    // Enable MMU
+    mrs x0, sctlr_el1
+    orr x0, x0, #(1 << 0)                 // M bit (MMU enable)
+    orr x0, x0, #(1 << 2)                 // C bit (D-cache enable)
+    orr x0, x0, #(1 << 12)                // I bit (I-cache enable)
+    msr sctlr_el1, x0
+    isb
+
+    // We're now running with identity mapping!
+    // For testing, we'll set up a minimal stack and call kernel_main
+    
+    // Set up stack pointer (still using physical address since PA=VA)
+    adr x0, _start
+    sub x0, x0, #0x10000                  // 64KB stack below code
     mov sp, x0
 
-    // We'll clear BSS after jumping to higher half when addresses are valid
-
-    // For now, jump to kernel_main using current PC-relative addressing
-    // This is temporary - proper implementation will:
-    // 1. Set up page tables
-    // 2. Enable MMU
-    // 3. Jump to higher half
-    // 4. Then call kernel_main with virtual addresses
-    
-    mov x0, x19       // Pass device tree pointer
-    // TEMPORARY: Direct branch (will fail once we're truly higher-half)
+    // Pass DTB pointer to kernel_main
+    mov x0, x19
     bl kernel_main
 
     // If kernel_main returns, hang
 hang:
     wfe
     b hang
+
+// Helper function to zero memory
+// x0 = start address, x1 = size in bytes
+func_zero_memory:
+    cbz x1, 2f
+1:  str xzr, [x0], #8
+    sub x1, x1, #8
+    cbnz x1, 1b
+2:  ret
 
 /*
  * TODO: Helper Functions for Page Table Creation

@@ -1,0 +1,154 @@
+HIGHER-HALF KERNEL IMPLEMENTATION PROGRESS
+==========================================
+
+Last Updated: 2025-07-24
+Current Status: Part A (Identity Mapping) COMPLETE
+
+## Overview
+We are implementing a higher-half kernel for 64-bit ARM (AArch64). The kernel will be loaded at a low physical address but run at high virtual addresses (0xFFFF_xxxx_xxxx_xxxx range).
+
+## Critical Addresses and Constants
+
+### Load Addresses
+- **QEMU Load Address**: 0x40080000 (where QEMU's -kernel option loads our binary)
+- **Expected Physical Base**: 0x40200000 (defined in linker script as KERNEL_PHYS_BASE)
+- **Virtual Base**: 0xFFFF000040200000 (defined as KERNEL_VIRT_BASE)
+- **Kernel Size**: ~40KB currently
+
+### Page Table Configuration
+- **Page Size**: 4KB (4096 bytes)
+- **Granule**: 4KB
+- **VA Space**: 48-bit
+- **Page Table Levels**: 4 (L0, L1, L2, L3)
+- **Entries per Table**: 512
+
+### Memory Layout
+- **Page Tables Location**: 9 pages before kernel (0x40077000 when kernel at 0x40080000)
+  - L0 TTBR0: 0x40077000 (1 page)
+  - L1 TTBR0: 0x40078000 (1 page)
+  - L2 TTBR0 (first 512MB): 0x40079000 (1 page)
+  - L2 TTBR0 (second 512MB): 0x4007A000 (1 page)
+  - Space for TTBR1 tables: 5 pages reserved
+
+### Page Table Entry Formats
+- **Valid bit**: bit 0
+- **Table/Block descriptor**: bits 0-1 (0x3 for table, 0x1 for block)
+- **AttrIndx**: bits 2-4 (MAIR index)
+- **AP**: bits 6-7 (Access Permissions)
+- **SH**: bits 8-9 (Shareability)
+- **AF**: bit 10 (Access Flag)
+- **nG**: bit 11 (not Global)
+- **Physical Address**: bits vary by level
+
+## Completed Work
+
+### 1. Boot Code Structure (arch/arm64/boot.S)
+- Exception level handling (EL3 -> EL2 -> EL1)
+- Physical address calculation (handles QEMU's load address)
+- Page table memory allocation and clearing
+- Identity mapping creation for first 1GB of physical memory
+- MMU configuration and enable
+- Basic function calling after MMU enable
+
+### 2. Identity Mapping Implementation
+Successfully creates identity mapping (VA = PA) for bootstrap:
+- **Coverage**: First 1GB of physical memory
+- **Granularity**: 2MB blocks at L2 level
+- **Attributes**: Normal memory, Inner/Outer Write-Back, RW at EL1
+
+Page table structure created:
+```
+L0[0] -> L1 table
+  L1[0] -> L2 table (covers 0-512MB)
+    L2[0-255]: 2MB blocks mapping 0x00000000-0x1FFFFFFF
+  L1[1] -> L2 table (covers 512MB-1GB) 
+    L2[0-255]: 2MB blocks mapping 0x40000000-0x5FFFFFFF
+```
+
+### 3. MMU Configuration
+- **MAIR_EL1**: 0xFF (Index 0 = Normal memory WB-WA)
+- **TCR_EL1**: 
+  - T0SZ = 16 (48-bit addresses)
+  - TG0 = 0 (4KB granule)
+  - SH0 = 3 (Inner shareable)
+  - ORGN0/IRGN0 = 1 (Write-back, write-allocate)
+- **SCTLR_EL1**: M=1, C=1, I=1 (MMU, D-cache, I-cache enabled)
+
+### 4. Test Results
+- Page tables correctly set up at 0x40077000
+- Identity mapping verified for kernel region
+- MMU successfully enabled
+- Execution continues after MMU enable
+- Currently hangs before reaching kernel_main
+- When kernel_main is reached (in earlier tests), it attempts to access virtual addresses which fail (expected - no higher-half mapping yet)
+
+## Next Steps for Higher-Half Implementation
+
+### Step 2B: Create Higher-Half Mapping (TTBR1)
+1. Allocate page tables for TTBR1 (already have space reserved)
+2. Create mapping from 0xFFFF000040200000 -> 0x40080000
+3. Map kernel code as read-only + executable
+4. Map kernel data as read-write + non-executable
+5. Set up TTBR1_EL1 register
+
+### Step 3: Jump to Higher Half
+1. After MMU enable with both mappings active
+2. Load higher-half address of next instruction
+3. Use indirect branch to jump
+4. Update stack pointer to virtual address
+5. Clear BSS using virtual addresses
+
+### Step 4: Remove Identity Mapping
+1. After running in higher half
+2. Clear TTBR0 or unmap identity regions
+3. Implement in C code after kernel_main starts
+
+## Current Issues
+
+### Post-MMU Enable Hang
+After enabling the MMU with identity mapping, the kernel hangs before reaching kernel_main. 
+Investigation shows there may be duplicate MMU configuration code being executed after the 
+initial MMU enable. This needs to be resolved before proceeding with higher-half mapping.
+
+## Important Notes
+
+### FreeBSD Comparison
+The reference FreeBSD locore.S implementation is very sensitive to:
+- Exact sequence of operations
+- Barrier instructions (ISB, DSB)
+- Register preservation across operations
+- TLB invalidation timing
+
+### Common Pitfalls Encountered
+1. **Load Address Mismatch**: QEMU loads at 0x40080000, not 0x40200000
+2. **L1 Index Calculation**: Kernel at 0x40080000 needs L1[1], not L1[0]
+3. **MMU Reconfiguration**: Cannot change TTBR0 while MMU is enabled with it
+4. **Virtual Address Access**: Any access to virtual addresses fails without mapping
+
+### Debugging Commands
+Useful GDB commands for debugging:
+```gdb
+# Check page table entry
+x/gx <table_base> + (<index> * 8)
+
+# Walk page tables for an address
+set $l0_idx = (<addr> >> 39) & 0x1FF
+set $l1_idx = (<addr> >> 30) & 0x1FF  
+set $l2_idx = (<addr> >> 21) & 0x1FF
+```
+
+### Memory Attributes
+Current implementation uses simple attributes:
+- 0x701: Block entry, AF=1, SH=Inner, AttrIndx=0, AP=RW_EL1
+- Consider using different attributes for code vs data in higher-half mapping
+
+## Files Modified
+- arch/arm64/boot.S: Main implementation
+- arch/arm64/linker.ld: Defines KERNEL_PHYS_BASE and KERNEL_VIRT_BASE
+- scripts/: Various GDB test scripts for verification
+
+## Testing
+Run with: `./scripts/debug-qemu.sh scripts/verify-identity-map.gdb`
+Current kernel size: 40960 bytes
+
+The identity mapping phase is complete and working correctly. Ready for higher-half mapping implementation.
