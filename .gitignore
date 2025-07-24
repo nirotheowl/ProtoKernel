@@ -29,6 +29,11 @@ core
 .tmp/
 tmp/
 
+# References 
+reference
+reference/
+reference/*
+
 # Documentation build
 docs/_build/
 *.pdf
