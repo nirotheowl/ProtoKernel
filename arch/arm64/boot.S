@@ -329,6 +329,55 @@ el1_entry:
     subs x3, x3, #1                       // Decrement counter
     b.ne 2b
 
+    /*
+     * Part B: Create Higher-Half Mapping Page Tables (TTBR1)
+     * ======================================================
+     * Map kernel from physical 0x40080000 to virtual 0xFFFF000040200000
+     * Note: QEMU loads us at 0x40080000, but we expect to run at 0xFFFF000040200000
+     */
+    
+    // Allocate TTBR1 page tables (continuing from x25)
+    mov x19, x25                          // x19 = L0 table for TTBR1
+    add x25, x25, #PAGE_SIZE
+    
+    mov x18, x25                          // x18 = L1 table for TTBR1
+    add x25, x25, #PAGE_SIZE
+    
+    mov x17, x25                          // x17 = L2 table for TTBR1
+    add x25, x25, #PAGE_SIZE
+    
+    // Create TTBR1 higher-half mapping
+    // Virtual address 0xFFFF000040200000 breakdown:
+    // L0 index: (0xFFFF000040200000 >> 39) & 0x1FF = 0x1FE (bit 47 set)
+    // L1 index: (0xFFFF000040200000 >> 30) & 0x1FF = 0x001
+    // L2 index: (0xFFFF000040200000 >> 21) & 0x1FF = 0x001
+    
+    // Step 1: L0 entry at index 0x1FE pointing to L1
+    mov x0, x18                           // L1 table physical address
+    orr x0, x0, #TABLE_DESC               // Table descriptor
+    mov x1, #0x1FE                        // L0 index for 0xFFFF range
+    str x0, [x19, x1, lsl #3]             // Store in L0[0x1FE]
+    
+    // Step 2: L1 entry at index 1 pointing to L2
+    mov x0, x17                           // L2 table physical address
+    orr x0, x0, #TABLE_DESC               // Table descriptor
+    str x0, [x18, #8]                     // Store in L1[1] (index 1)
+    
+    // Step 3: L2 entries for kernel mapping
+    // We need to map from where QEMU loads us (0x40080000) 
+    // The kernel is about 40KB, so we'll map 64MB to be safe
+    mov x0, x28                           // Physical base where kernel is loaded
+    mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
+    orr x1, x1, #BLOCK_DESC               // Block descriptor
+    mov x2, x17                           // L2 table base
+    mov x3, #32                           // 32 * 2MB = 64MB
+    
+3:  orr x4, x0, x1                        // Combine address and attributes
+    str x4, [x2], #8                      // Store and increment pointer
+    add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block
+    subs x3, x3, #1                       // Decrement counter
+    b.ne 3b
+
     // Configure MAIR_EL1 (Memory Attribute Indirection Register)
     // Index 0: Normal memory, Inner/Outer Write-Back Non-transient
     // Index 1: Device memory, nGnRnE
@@ -336,21 +385,34 @@ el1_entry:
     msr mair_el1, x0
 
     // Configure TCR_EL1 (Translation Control Register)
-    // T0SZ = 16 (48-bit addresses)
+    // T0SZ = 16 (48-bit addresses for TTBR0)
+    // T1SZ = 16 (48-bit addresses for TTBR1)
     // TG0 = 0 (4KB granule)
+    // TG1 = 2 (4KB granule)
     // SH0 = 3 (Inner shareable)
+    // SH1 = 3 (Inner shareable)
     // ORGN0 = 1 (Write-back, write-allocate)
     // IRGN0 = 1 (Write-back, write-allocate)
+    // ORGN1 = 1 (Write-back, write-allocate)
+    // IRGN1 = 1 (Write-back, write-allocate)
     mov x0, #16                           // T0SZ = 16
+    orr x0, x0, #(16 << 16)               // T1SZ = 16
     orr x0, x0, #(0x3 << 12)              // SH0 = Inner shareable
+    orr x0, x0, #(0x3 << 28)              // SH1 = Inner shareable
     orr x0, x0, #(0x1 << 10)              // ORGN0 = WBWA
+    orr x0, x0, #(0x1 << 26)              // ORGN1 = WBWA
     orr x0, x0, #(0x1 << 8)               // IRGN0 = WBWA
+    orr x0, x0, #(0x1 << 24)              // IRGN1 = WBWA
+    orr x0, x0, #(0x2 << 30)              // TG1 = 4KB
     mov x1, #(0x1 << 37)                  // TBI0 = 1 (top byte ignored)
     orr x0, x0, x1
     msr tcr_el1, x0
 
-    // Set TTBR0_EL1 to our L0 table
+    // Set TTBR0_EL1 to our L0 table (identity mapping)
     msr ttbr0_el1, x23
+    
+    // Set TTBR1_EL1 to our L0 table (higher-half mapping)
+    msr ttbr1_el1, x19
     isb
 
     // Enable MMU

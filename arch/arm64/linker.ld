@@ -1,8 +1,8 @@
 ENTRY(_start)
 
 /* Higher-half kernel configuration */
-KERNEL_PHYS_BASE = 0x40200000;  /* Physical load address */
-KERNEL_VIRT_BASE = 0xFFFF000040200000;  /* Virtual address in higher half */
+KERNEL_PHYS_BASE = 0x40080000;  /* Physical load address (where QEMU loads us) */
+KERNEL_VIRT_BASE = 0xFFFF000040080000;  /* Virtual address in higher half (aligned with physical) */
 
 SECTIONS
 {
