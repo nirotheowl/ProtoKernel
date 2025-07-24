@@ -11,8 +11,14 @@ CFLAGS = -Wall -Wextra -ffreestanding -nostdlib -nostartfiles -std=c11
 CFLAGS += -march=armv8-a -mgeneral-regs-only
 CFLAGS += -O2 -g
 CFLAGS += -I kernel/include
+# For higher-half kernel: use large code model to handle addresses > 4GB
+CFLAGS += -mcmodel=large
+# Disable PIC as it's incompatible with large model
+CFLAGS += -fno-pic -fno-pie
 
 LDFLAGS = -T arch/arm64/linker.ld -nostdlib
+# Static linking required for large model
+LDFLAGS += -static
 
 # Directories
 BUILD_DIR = build
