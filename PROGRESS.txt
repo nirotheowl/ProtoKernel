@@ -105,10 +105,20 @@ L0[0] -> L1 table
 
 ## Current Issues
 
-### Post-MMU Enable Hang
-After enabling the MMU with identity mapping, the kernel hangs before reaching kernel_main. 
-Investigation shows there may be duplicate MMU configuration code being executed after the 
-initial MMU enable. This needs to be resolved before proceeding with higher-half mapping.
+### Virtual Address Access in kernel_main
+After enabling the MMU with identity mapping, the kernel successfully:
+- Enables the MMU with identity mapping
+- Sets up the stack pointer at 0x40070000
+- Jumps to kernel_main at physical address 0x40081a80
+
+However, kernel_main immediately faults when trying to load a string constant because:
+- The kernel is compiled to use virtual addresses (0xFFFF000040200000 range)
+- kernel_main tries to load from address 0xffff0000402042e8 (a string constant)
+- We only have identity mapping (PA = VA), no higher-half mapping yet
+- The access to unmapped virtual address causes an exception (jumps to 0x200)
+
+This is expected behavior since the kernel is compiled for higher-half addresses but we haven't 
+implemented that mapping yet. The solution is to implement Step 2B: Create Higher-Half Mapping.
 
 ## Important Notes
 
