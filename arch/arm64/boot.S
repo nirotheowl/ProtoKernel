@@ -1,3 +1,8 @@
+/*
+ * mwl - 2025-07-25 - arch/arm64/boot.S
+ * 64-bit ARM higher-half kernel bootstrap code with MMU setup and virtual memory
+ */
+
 .section ".text.boot"
 
 .global _start
@@ -50,29 +55,29 @@
  */
 _start:
     /* Executable code - jump over the header to actual code */
-    b       _real_start              // code0: branch to actual code
-    .long   0                        // code1: reserved
-    .quad   0x0                      // text_offset: kernel load offset (0 = 2MB aligned)
-    .quad   _end - _start            // image_size: total image size
-    .quad   0x8                      // flags: LE, 4K pages, bit 3 = anywhere in RAM
-    .quad   0                        // res2: reserved
-    .quad   0                        // res3: reserved  
-    .quad   0                        // res4: reserved
-    .long   0x644d5241               // magic: "ARM\x64" (LE)
-    .long   0                        // res5: reserved
+    b       _real_start              /* code0: branch to actual code */
+    .long   0                        /* code1: reserved */
+    .quad   0x0                      /* text_offset: kernel load offset (0 = 2MB aligned) */
+    .quad   _end - _start            /* image_size: total image size */
+    .quad   0x8                      /* flags: LE, 4K pages, bit 3 = anywhere in RAM */
+    .quad   0                        /* res2: reserved */
+    .quad   0                        /* res3: reserved */  
+    .quad   0                        /* res4: reserved */
+    .long   0x644d5241               /* magic: "ARM\x64" (LE) */
+    .long   0                        /* res5: reserved */
 
 /* Ensure we start at offset 64 (0x40) from _start */
 .org 0x40
 _real_start:
-    // U-Boot passes: x0=dtb, x1=0, x2=0, x3=0
-    // Linux boot protocol expects: x0=dtb, x1=0, x2=0, x3=0
-    // Save registers for U-Boot compatibility
-    mov x27, x0  // Save DTB pointer in x27 (we'll use x19 for page tables)
-    mov x20, x1  // Should be 0
-    mov x21, x2  // Should be 0
-    mov x22, x3  // Should be 0
+    /* U-Boot passes: x0=dtb, x1=0, x2=0, x3=0
+     * Linux boot protocol expects: x0=dtb, x1=0, x2=0, x3=0
+     * Save registers for U-Boot compatibility */
+    mov x27, x0  /* Save DTB pointer in x27 (we'll use x19 for page tables) */
+    mov x20, x1  /* Should be 0 */
+    mov x21, x2  /* Should be 0 */
+    mov x22, x3  /* Should be 0 */
 
-    // Get current exception level
+    /* Get current exception level */
     mrs x0, CurrentEL
     and x0, x0, #0xC
     cmp x0, #0x8
@@ -81,45 +86,45 @@ _real_start:
     beq el1_entry
 
 el3_entry:
-    // Configure EL3 and drop to EL2
-    // Set up SCR_EL3
-    mov x0, #0x5b1    // RW=1, HCE=1, SMD=1, RES1=1, NS=1
+    /* Configure EL3 and drop to EL2 */
+    /* Set up SCR_EL3 */
+    mov x0, #0x5b1    /* RW=1, HCE=1, SMD=1, RES1=1, NS=1 */
     msr scr_el3, x0
 
-    // Set up SPSR_EL3 to boot into EL2
-    mov x0, #0x3c9    // EL2h with interrupts disabled
+    /* Set up SPSR_EL3 to boot into EL2 */
+    mov x0, #0x3c9    /* EL2h with interrupts disabled */
     msr spsr_el3, x0
 
-    // Set ELR_EL3 to continue execution in EL2
+    /* Set ELR_EL3 to continue execution in EL2 */
     adr x0, el2_entry
     msr elr_el3, x0
     eret
 
 el2_entry:
-    // Configure EL2 and drop to EL1
-    // Enable AArch64 in EL1
+    /* Configure EL2 and drop to EL1 */
+    /* Enable AArch64 in EL1 */
     mov x0, #(1 << 31)
     msr hcr_el2, x0
 
-    // Set up SCTLR_EL1
+    /* Set up SCTLR_EL1 */
     mov x0, #0x0
     msr sctlr_el1, x0
 
-    // Set up SPSR_EL2 to boot into EL1
-    mov x0, #0x3c5    // EL1h with interrupts disabled
+    /* Set up SPSR_EL2 to boot into EL1 */
+    mov x0, #0x3c5    /* EL1h with interrupts disabled */
     msr spsr_el2, x0
 
-    // Set ELR_EL2 to continue execution in EL1
+    /* Set ELR_EL2 to continue execution in EL1 */
     adr x0, el1_entry
     msr elr_el2, x0
     eret
 
 el1_entry:
-    // Disable MMU and caches before setup
+    /* Disable MMU and caches before setup */
     mrs x0, sctlr_el1
-    bic x0, x0, #(1 << 0)   // Clear M bit (MMU)
-    bic x0, x0, #(1 << 2)   // Clear C bit (D-cache)
-    bic x0, x0, #(1 << 12)  // Clear I bit (I-cache)
+    bic x0, x0, #(1 << 0)   /* Clear M bit (MMU) */
+    bic x0, x0, #(1 << 2)   /* Clear C bit (D-cache) */
+    bic x0, x0, #(1 << 12)  /* Clear I bit (I-cache) */
     msr sctlr_el1, x0
     isb
 
@@ -152,80 +157,6 @@ el1_entry:
     sub x28, x28, x29       // Calculate physical base address
     // Now x28 = physical address where kernel is loaded
 
-    /*
-     * TODO: Step 2 - Create Page Tables
-     * =================================
-     * We need to create two sets of mappings:
-     * 
-     * A. Identity mapping (TTBR0):
-     *    - Maps physical addresses to themselves
-     *    - Needed during MMU enable and transition
-     *    - Will map at least the kernel code/data
-     *    - Can be coarse (2MB blocks)
-     * 
-     * B. Higher-half mapping (TTBR1):
-     *    - Maps kernel to 0xFFFF_xxxx_xxxx_xxxx range
-     *    - This is the permanent kernel mapping
-     *    - Should map kernel text as read-only + executable
-     *    - Should map kernel data as read-write + non-executable
-     * 
-     * Page table allocation:
-     * - Place page tables before kernel in physical memory
-     * - Need tables for: L0, L1, L2, and possibly L3
-     * - Clear all page tables first
-     * 
-     * FreeBSD approach:
-     * - Uses 7-8 pages before kernel load address for tables
-     * - Creates minimal identity map for bootstrap
-     * - Creates full kernel mapping in higher half
-     */
-
-    /*
-     * TODO: Step 3 - Configure MMU Registers
-     * ======================================
-     * Set up all the MMU control registers:
-     * 
-     * MAIR_EL1: Memory Attribute Indirection Register
-     * - Define memory types (Device, Normal cached/uncached)
-     * 
-     * TCR_EL1: Translation Control Register
-     * - T0SZ: Size of TTBR0 address space
-     * - T1SZ: Size of TTBR1 address space  
-     * - TG0/TG1: Translation granule (4KB/16KB/64KB)
-     * - Share attributes, cache attributes
-     * 
-     * TTBR0_EL1: Base address of TTBR0 page tables
-     * TTBR1_EL1: Base address of TTBR1 page tables
-     */
-
-    /*
-     * TODO: Step 4 - Enable MMU
-     * ========================
-     * Enable the MMU with both mappings active:
-     * - Set SCTLR_EL1.M bit
-     * - Ensure I-cache and D-cache settings are correct
-     * - ISB to synchronize
-     * 
-     * After this point, we're running with MMU on using
-     * identity mapping (low addresses)
-     */
-
-    /*
-     * TODO: Step 5 - Jump to Higher Half
-     * ==================================
-     * Transition from identity-mapped low addresses to
-     * higher-half virtual addresses:
-     * 
-     * - Load the higher-half address of next instruction
-     * - Use indirect branch to jump there
-     * - After jump, we're running in higher half
-     * 
-     * Example:
-     *   ldr x0, =higher_half_label  // Load VA
-     *   br x0                       // Jump to VA
-     * higher_half_label:
-     *   // Now running at 0xFFFF_xxxx_xxxx_xxxx
-     */
 
     /*
      * IMPORTANT: We're currently running at physical addresses with MMU off.
@@ -360,139 +291,141 @@ el1_entry:
      * Note: QEMU loads Linux images at 0x40200000
      */
     
-    // Allocate TTBR1 page tables (continuing from x25)
-    mov x19, x25                          // x19 = L0 table for TTBR1
+    /* Allocate TTBR1 page tables (continuing from x25) */
+    mov x19, x25                          /* x19 = L0 table for TTBR1 */
     add x25, x25, #PAGE_SIZE
     
-    mov x18, x25                          // x18 = L1 table for TTBR1
+    mov x18, x25                          /* x18 = L1 table for TTBR1 */
     add x25, x25, #PAGE_SIZE
     
-    mov x17, x25                          // x17 = L2 table for TTBR1
+    mov x17, x25                          /* x17 = L2 table for TTBR1 */
     add x25, x25, #PAGE_SIZE
     
-    // Create TTBR1 higher-half mapping
-    // Virtual address 0xFFFF000040200000 breakdown with T1SZ=16 (48-bit VA):
-    // Top 16 bits (63:48) must be all 1s for TTBR1
-    // L0 index: bits [47:39] = 0x000 (NOT 0x1FE!)
-    // L1 index: bits [38:30] = 0x001
-    // L2 index: bits [29:21] = 0x001
+    /* Create TTBR1 higher-half mapping
+     * Virtual address 0xFFFF000040200000 breakdown with T1SZ=16 (48-bit VA):
+     * Top 16 bits (63:48) must be all 1s for TTBR1
+     * L0 index: bits [47:39] = 0x000 (NOT 0x1FE!)
+     * L1 index: bits [38:30] = 0x001
+     * L2 index: bits [29:21] = 0x001 */
     
-    // Step 1: L0 entry at index 0x000 pointing to L1
-    mov x0, x18                           // L1 table physical address
-    orr x0, x0, #TABLE_DESC               // Table descriptor
-    str x0, [x19]                         // Store in L0[0] - NOT L0[0x1FE]!
+    /* Step 1: L0 entry at index 0x000 pointing to L1 */
+    mov x0, x18                           /* L1 table physical address */
+    orr x0, x0, #TABLE_DESC               /* Table descriptor */
+    str x0, [x19]                         /* Store in L0[0] - NOT L0[0x1FE]! */
     
-    // Step 2: L1 entry at index 1 pointing to L2
-    mov x0, x17                           // L2 table physical address
-    orr x0, x0, #TABLE_DESC               // Table descriptor
-    str x0, [x18, #8]                     // Store in L1[1] (index 1)
+    /* Step 2: L1 entry at index 1 pointing to L2 */
+    mov x0, x17                           /* L2 table physical address */
+    orr x0, x0, #TABLE_DESC               /* Table descriptor */
+    str x0, [x18, #8]                     /* Store in L1[1] (index 1) */
     
-    // Step 3: L2 entries for kernel mapping
-    // We need to map from where QEMU loads us (x28 contains this)
-    // Since we're using 2MB blocks, we need to align to 2MB boundary
-    mov x0, x28                           // Restore physical base from x28 (was clobbered)
-    mov x1, #L2_BLOCK_SIZE - 1            // Mask for 2MB alignment (0x1FFFFF)
-    bic x0, x0, x1                        // Clear lower 21 bits to align to 2MB
+    /* Step 3: L2 entries for kernel mapping
+     * We need to map from where QEMU loads us (x28 contains this).
+     * Since we're using 2MB blocks, we need to align to 2MB boundary.
+     * Fixed bug: All L2 entries point to same physical region. */
+    mov x0, x28                           /* Restore physical base from x28 */
+    mov x1, #L2_BLOCK_SIZE - 1            /* Mask for 2MB alignment (0x1FFFFF) */
+    bic x0, x0, x1                        /* Clear lower 21 bits to align to 2MB */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
-    orr x1, x1, #BLOCK_DESC               // Block descriptor
-    mov x2, x17                           // L2 table base
-    mov x3, #32                           // 32 * 2MB = 64MB
+    orr x1, x1, #BLOCK_DESC               /* Block descriptor */
+    mov x2, x17                           /* L2 table base */
+    mov x3, #32                           /* 32 * 2MB = 64MB */
     
-3:  orr x4, x0, x1                        // Combine address and attributes
-    str x4, [x2], #8                      // Store and increment pointer
-    // add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block - COMMENTED OUT: Bug fix - don't increment for higher-half
-    subs x3, x3, #1                       // Decrement counter
+3:  orr x4, x0, x1                        /* Combine address and attributes */
+    str x4, [x2], #8                      /* Store and increment pointer */
+    /* Don't increment physical address - all entries map to same region */
+    subs x3, x3, #1                       /* Decrement counter */
     b.ne 3b
 
-    // Configure MAIR_EL1 (Memory Attribute Indirection Register)
-    // Index 0: Normal memory, Inner/Outer Write-Back Non-transient
-    // Index 1: Device memory, nGnRnE
-    mov x0, #0xFF                         // Normal memory attributes
+    /* Configure MAIR_EL1 (Memory Attribute Indirection Register)
+     * MAIR_EL1 defines memory types for use in page table entries:
+     * Index 0: Normal memory, Inner/Outer Write-Back Non-transient
+     * Index 1: Device memory, nGnRnE */
+    mov x0, #0xFF                         /* Normal memory attributes */
     msr mair_el1, x0
 
-    // Configure TCR_EL1 (Translation Control Register)
-    // T0SZ = 16 (48-bit addresses for TTBR0)
-    // T1SZ = 16 (48-bit addresses for TTBR1)
-    // TG0 = 0 (4KB granule)
-    // TG1 = 2 (4KB granule)
-    // SH0 = 3 (Inner shareable)
-    // SH1 = 3 (Inner shareable)
-    // ORGN0 = 1 (Write-back, write-allocate)
-    // IRGN0 = 1 (Write-back, write-allocate)
-    // ORGN1 = 1 (Write-back, write-allocate)
-    // IRGN1 = 1 (Write-back, write-allocate)
-    mov x0, #16                           // T0SZ = 16
-    orr x0, x0, #(16 << 16)               // T1SZ = 16
-    orr x0, x0, #(0x3 << 12)              // SH0 = Inner shareable
-    orr x0, x0, #(0x3 << 28)              // SH1 = Inner shareable
-    orr x0, x0, #(0x1 << 10)              // ORGN0 = WBWA
-    orr x0, x0, #(0x1 << 26)              // ORGN1 = WBWA
-    orr x0, x0, #(0x1 << 8)               // IRGN0 = WBWA
-    orr x0, x0, #(0x1 << 24)              // IRGN1 = WBWA
-    orr x0, x0, #(0x2 << 30)              // TG1 = 4KB
-    mov x1, #(0x1 << 37)                  // TBI0 = 1 (top byte ignored)
+    /* Configure TCR_EL1 (Translation Control Register)
+     * Controls address translation parameters:
+     * - T0SZ/T1SZ: Size of address space (16 = 48-bit)
+     * - TG0/TG1: Translation granule (0/2 = 4KB)
+     * - SH0/SH1: Shareability (3 = Inner shareable)
+     * - ORGN0/ORGN1: Outer cacheability (1 = Write-back, write-allocate)
+     * - IRGN0/IRGN1: Inner cacheability (1 = Write-back, write-allocate)
+     * - TBI0: Top byte ignored for tagging */
+    mov x0, #16                           /* T0SZ = 16 */
+    orr x0, x0, #(16 << 16)               /* T1SZ = 16 */
+    orr x0, x0, #(0x3 << 12)              /* SH0 = Inner shareable */
+    orr x0, x0, #(0x3 << 28)              /* SH1 = Inner shareable */
+    orr x0, x0, #(0x1 << 10)              /* ORGN0 = WBWA */
+    orr x0, x0, #(0x1 << 26)              /* ORGN1 = WBWA */
+    orr x0, x0, #(0x1 << 8)               /* IRGN0 = WBWA */
+    orr x0, x0, #(0x1 << 24)              /* IRGN1 = WBWA */
+    orr x0, x0, #(0x2 << 30)              /* TG1 = 4KB */
+    mov x1, #(0x1 << 37)                  /* TBI0 = 1 (top byte ignored) */
     orr x0, x0, x1
     msr tcr_el1, x0
 
-    // Set TTBR0_EL1 to our L0 table (identity mapping)
+    /* Set TTBR0_EL1 to our L0 table (identity mapping) */
     msr ttbr0_el1, x23
     
-    // Set TTBR1_EL1 to our L0 table (higher-half mapping)
+    /* Set TTBR1_EL1 to our L0 table (higher-half mapping) */
     msr ttbr1_el1, x19
     isb
     
-    // Force a TLB invalidation to ensure new mappings are visible
+    /* Force a TLB invalidation to ensure new mappings are visible */
     tlbi vmalle1
     dsb ish
     isb
 
-    // Set up exception vectors before enabling MMU
+    /* Set up exception vectors before enabling MMU */
     adr x0, exception_vectors
     msr vbar_el1, x0
     isb
 
-    // Enable MMU
+    /* Enable MMU in SCTLR_EL1
+     * M bit (0): MMU enable
+     * C bit (2): D-cache enable
+     * I bit (12): I-cache enable */
     mrs x0, sctlr_el1
-    orr x0, x0, #(1 << 0)                 // M bit (MMU enable)
-    orr x0, x0, #(1 << 2)                 // C bit (D-cache enable)
-    orr x0, x0, #(1 << 12)                // I bit (I-cache enable)
+    orr x0, x0, #(1 << 0)                 /* M bit (MMU enable) */
+    orr x0, x0, #(1 << 2)                 /* C bit (D-cache enable) */
+    orr x0, x0, #(1 << 12)                /* I bit (I-cache enable) */
     msr sctlr_el1, x0
     isb
 
-    // We're now running with identity mapping!
-    // Time to jump to higher half addresses
+    /* We're now running with identity mapping!
+     * Time to jump to higher half addresses. */
     
-    // Jump to higher half virtual address
-    // Load the virtual address of higher_half label
-    adr x1, .Lhigher_half_addr        // Get address of constant
-    ldr x1, [x1]                      // Load 64-bit virtual address
-    br x1                             // Jump to virtual address
+    /* Jump to higher half virtual address
+     * Load the virtual address of higher_half label */
+    adr x1, .Lhigher_half_addr        /* Get address of constant */
+    ldr x1, [x1]                      /* Load 64-bit virtual address */
+    br x1                             /* Jump to virtual address */
     
-    // Store the virtual address as a 64-bit constant
+    /* Store the virtual address as a 64-bit constant */
     .align 3
 .Lhigher_half_addr:
     .quad higher_half
 
 higher_half:
-    // We're now running at virtual addresses!
-    // The PC is now at 0xFFFF0000400xxxxx
+    /* We're now running at virtual addresses!
+     * The PC is now at 0xFFFF0000400xxxxx */
     
-    // Set up stack pointer using virtual address
+    /* Set up stack pointer using virtual address */
     ldr x0, =_start
-    sub x0, x0, #0x10000                  // 64KB stack below code
+    sub x0, x0, #0x10000                  /* 64KB stack below code */
     mov sp, x0
 
-    // Pass DTB pointer to kernel_main
-    mov x0, x27                           // Restore DTB pointer from x27
+    /* Pass DTB pointer to kernel_main */
+    mov x0, x27                           /* Restore DTB pointer from x27 */
     bl kernel_main
 
-    // If kernel_main returns, hang
+    /* If kernel_main returns, hang */
 hang:
     wfe
     b hang
 
-// Helper function to zero memory
-// x0 = start address, x1 = size in bytes
+/* Helper function to zero memory
+ * x0 = start address, x1 = size in bytes */
 func_zero_memory:
     cbz x1, 2f
 1:  str xzr, [x0], #8
@@ -500,120 +433,12 @@ func_zero_memory:
     cbnz x1, 1b
 2:  ret
 
-/*
- * TODO: Helper Functions for Page Table Creation
- * ==============================================
- * 
- * We'll need several helper functions similar to FreeBSD:
- * 
- * 1. get_phys_load_addr:
- *    - Calculate physical load address using PC-relative addressing
- *    - Store in a register (e.g., x28) for use throughout
- * 
- * 2. create_page_tables:
- *    - Main function to orchestrate page table creation
- *    - Calls helpers to build each level
- *    - Returns TTBR0 and TTBR1 base addresses
- * 
- * 3. build_l0_entry:
- *    - Creates L0 table entries pointing to L1 tables
- * 
- * 4. build_l1_entry:
- *    - Creates L1 table entries pointing to L2 tables
- * 
- * 5. build_l2_block_entry:
- *    - Creates 2MB block mappings at L2 level
- *    - Used for both identity and kernel mappings
- * 
- * 6. build_l3_page_entry (if using 4KB pages):
- *    - Creates 4KB page mappings at L3 level
- *    - Allows finer-grained permissions
- * 
- * 7. enable_mmu:
- *    - Configure MAIR, TCR, TTBR0, TTBR1
- *    - Enable MMU in SCTLR_EL1
- *    - Handle cache/TLB management
- */
-
-/*
- * TODO: Page Table Memory Layout
- * ==============================
- * 
- * Page tables will be placed just before kernel in physical memory:
- * 
- * 0x40200000 - (n * PAGE_SIZE): Page tables start here
- * 0x40200000: Kernel starts here
- * 
- * Tables needed (example for 4KB pages):
- * - 1 page for TTBR1 L0 table
- * - 1 page for TTBR1 L1 table  
- * - 1 page for TTBR1 L2 table
- * - n pages for TTBR1 L3 tables (if needed)
- * - 1 page for TTBR0 L0 table
- * - 1 page for TTBR0 L1 table
- * - 1 page for TTBR0 L2 table
- * 
- * Total: ~7-8 pages minimum
- */
-
-/*
- * TODO: Important Constants and Definitions
- * ========================================
- * 
- * Define these based on your chosen configuration:
- * 
- * KERNBASE: Virtual base address (e.g., 0xFFFF000000000000)
- * PAGE_SIZE: 4KB or 16KB
- * 
- * Table entry formats:
- * - Valid bit (bit 0)
- * - Table/Block/Page descriptor type (bits 0-1)
- * - Memory attributes index (bits 2-4)
- * - Access permissions (bits 6-7)
- * - Shareability (bits 8-9)
- * - Access flag (bit 10)
- * - Not Global (bit 11)
- * - Contiguous (bit 52)
- * - PXN/UXN (bits 53-54)
- * 
- * Memory attributes for MAIR_EL1:
- * - Device memory: nGnRnE, nGnRE
- * - Normal memory: Outer/Inner Write-Back Cacheable
- * - Normal memory: Outer/Inner Non-Cacheable
- */
 
 .section ".data"
 .align 12
 .global _stack_bottom
 _stack_bottom:
-    .skip 4096 * 4   // 16KB stack
+    .skip 4096 * 4   /* 16KB stack */
 .global _stack_top
 _stack_top:
 
-/*
- * TODO: Page Table Storage Section
- * ================================
- * 
- * Add a section for page tables before kernel:
- * 
- * .section ".init_pagetable", "aw", %nobits
- * .align 12  // 4KB aligned
- * 
- * pagetable_l0_ttbr1:
- *     .skip PAGE_SIZE
- * pagetable_l1_ttbr1:
- *     .skip PAGE_SIZE
- * pagetable_l2_ttbr1:
- *     .skip PAGE_SIZE
- * pagetable_l3_ttbr1:  // If using 4KB pages
- *     .skip PAGE_SIZE * n
- * 
- * pagetable_l0_ttbr0:
- *     .skip PAGE_SIZE
- * pagetable_l1_ttbr0:
- *     .skip PAGE_SIZE  
- * pagetable_l2_ttbr0:
- *     .skip PAGE_SIZE
- * 
- * This section should be placed before .text in the linker script
- */
