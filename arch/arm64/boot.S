@@ -1,6 +1,12 @@
 /*
- * mwl - 2025-07-25 - arch/arm64/boot.S
- * 64-bit ARM higher-half kernel bootstrap code with MMU setup and virtual memory
+ * arch/arm64/boot.S
+ * 
+ * Author:  Michael W. Lloyd
+ * Date: 2025-07-25
+ * 
+ * Description: 64-bit ARM kernel bootstrap code implementing higher-half
+ *              virtual memory with MMU setup, page table creation, and
+ *              transition from physical to virtual address space.
  */
 
 .section ".text.boot"
@@ -13,45 +19,23 @@
 .extern _kernel_end
 
 /*
- * Higher-Half Kernel Implementation Plan
- * =====================================
- * 
- * This kernel will be loaded at a low physical address but run at a high
- * virtual address (0xFFFF_xxxx_xxxx_xxxx range). We need to:
- * 
- * 1. Boot with MMU off or identity-mapped
- * 2. Create page tables for both identity mapping and higher-half mapping
- * 3. Enable MMU with both mappings active
- * 4. Jump to higher-half addresses
- * 5. Remove identity mapping (done later in C code)
- * 
- * Memory Layout:
- * - Physical: Kernel loaded at 0x40200000 (2MB-aligned)
- * - Virtual:  Kernel will run at KERNBASE (e.g., 0xFFFF_0000_4020_0000)
+ * ARMv8 Page Table Configuration
+ * ==============================
  * 
  * Page Table Strategy:
  * - TTBR0: Identity mapping for bootstrap (PA = VA)
- *          Later: User space mappings
- * - TTBR1: Higher-half kernel mapping (VA = KERNBASE + PA)
+ * - TTBR1: Kernel mapping in higher virtual addresses
  * 
  * Page Table Hierarchy (4KB pages, 48-bit VA):
  * - L0: 512 entries, each covers 512GB
  * - L1: 512 entries, each covers 1GB  
  * - L2: 512 entries, each covers 2MB
- * - L3: 512 entries, each covers 4KB
- * 
- * For 16KB pages:
- * - L0: Not used with 48-bit VA
- * - L1: 2 entries, each covers 64TB
- * - L2: 8192 entries, each covers 32MB
- * - L3: 8192 entries, each covers 16KB
+ * - L3: 512 entries, each covers 4KB (if used)
  */
 
 /*
- * Linux ARM64 Image Header
- * ========================
- * Must be placed at the beginning of the kernel image for U-Boot compatibility.
- * QEMU also recognizes this header when using -kernel option.
+ * ARM64 Linux-compatible Image Header
+ * Required for bootloader compatibility (U-Boot, QEMU, etc.)
  */
 _start:
     /* Executable code - jump over the header to actual code */
@@ -128,34 +112,20 @@ el1_entry:
     msr sctlr_el1, x0
     isb
 
-    // Invalidate caches and TLB
-    ic iallu                // Invalidate all instruction caches
-    tlbi vmalle1           // Invalidate all TLB entries
+    /* Invalidate caches and TLB */
+    ic iallu                /* Invalidate all instruction caches */
+    tlbi vmalle1           /* Invalidate all TLB entries */
     dsb nsh
     isb
 
-    /*
-     * TODO: Step 1 - Get Physical Load Address
-     * ========================================
-     * Before we can create page tables, we need to know where we are
-     * physically loaded. This is needed to:
-     * - Create identity mapping (PA = VA)
-     * - Calculate offset for higher-half mapping
-     * 
-     * Method: Use PC-relative addressing
-     * Example from FreeBSD:
-     *   adr x28, _start     // Get actual physical address
-     *   ldr x29, =_start    // Get link-time virtual address
-     *   sub x28, x28, x29   // Calculate relocation offset
-     */
     
-    // Get our actual physical load address
-    adr x28, _start         // Get PC-relative address (physical)
-    ldr x29, =_start        // Get absolute address from linker (virtual)
+    /* Get our actual physical load address */
+    adr x28, _start         /* Get PC-relative address (physical) */
+    ldr x29, =_start        /* Get absolute address from linker (virtual) */
     ldr x30, =KERNEL_VIRT_BASE
-    sub x29, x29, x30       // Get offset from virtual base
-    sub x28, x28, x29       // Calculate physical base address
-    // Now x28 = physical address where kernel is loaded
+    sub x29, x29, x30       /* Get offset from virtual base */
+    sub x28, x28, x29       /* Calculate physical base address */
+    /* Now x28 = physical address where kernel is loaded */
 
 
     /*
@@ -168,127 +138,125 @@ el1_entry:
      */
 
     /*
-     * Part A: Create Identity Mapping Page Tables
-     * ===========================================
+     * Create Identity Mapping Page Tables
+     * ===================================
      * We'll create a simple identity mapping for the bootstrap phase.
      * This maps physical addresses to themselves in TTBR0.
      */
 
-    // First, define some constants for page table entries
-    // Page table entry bits
-    .equ ATTR_MAIR_IDX_NORMAL, 0x0 << 2  // MAIR index 0 (normal memory)
-    .equ ATTR_MAIR_IDX_DEVICE, 0x1 << 2  // MAIR index 1 (device memory)
-    .equ ATTR_AP_RW_EL1, 0x0 << 6        // Read-write at EL1
-    .equ ATTR_AP_RO_EL1, 0x2 << 6        // Read-only at EL1
-    .equ ATTR_SH_INNER, 0x3 << 8         // Inner shareable
-    .equ ATTR_AF, 0x1 << 10               // Access flag
-    .equ ATTR_nG, 0x1 << 11               // Not global
-    .equ ATTR_UXN, 0x1 << 54              // Unprivileged execute never
-    .equ ATTR_PXN, 0x1 << 53              // Privileged execute never
+    /* Page table entry bits for ARMv8 MMU */
+    .equ ATTR_MAIR_IDX_NORMAL, 0x0 << 2  /* MAIR index 0 (normal memory) */
+    .equ ATTR_MAIR_IDX_DEVICE, 0x1 << 2  /* MAIR index 1 (device memory) */
+    .equ ATTR_AP_RW_EL1, 0x0 << 6        /* Read-write at EL1 */
+    .equ ATTR_AP_RO_EL1, 0x2 << 6        /* Read-only at EL1 */
+    .equ ATTR_SH_INNER, 0x3 << 8         /* Inner shareable */
+    .equ ATTR_AF, 0x1 << 10               /* Access flag */
+    .equ ATTR_nG, 0x1 << 11               /* Not global */
+    .equ ATTR_UXN, 0x1 << 54              /* Unprivileged execute never */
+    .equ ATTR_PXN, 0x1 << 53              /* Privileged execute never */
 
-    // Entry types
-    .equ TABLE_DESC, 0x3                  // Table descriptor
-    .equ BLOCK_DESC, 0x1                  // Block descriptor
-    .equ PAGE_DESC, 0x3                   // Page descriptor (L3 only)
+    /* Entry types */
+    .equ TABLE_DESC, 0x3                  /* Table descriptor */
+    .equ BLOCK_DESC, 0x1                  /* Block descriptor */
+    .equ PAGE_DESC, 0x3                   /* Page descriptor (L3 only) */
 
-    // Page sizes
+    /* Page sizes */
     .equ PAGE_SIZE, 4096
     .equ PAGE_SHIFT, 12
-    .equ TABLE_SHIFT, 9                   // 512 entries per table
+    .equ TABLE_SHIFT, 9                   /* 512 entries per table */
     .equ TABLE_ENTRIES, 512
 
-    // Level shifts for 4KB pages with 48-bit VA
-    .equ L0_SHIFT, 39                     // Bits 47:39
-    .equ L1_SHIFT, 30                     // Bits 38:30
-    .equ L2_SHIFT, 21                     // Bits 29:21
-    .equ L3_SHIFT, 12                     // Bits 20:12
+    /* Level shifts for 4KB pages with 48-bit VA */
+    .equ L0_SHIFT, 39                     /* Bits 47:39 */
+    .equ L1_SHIFT, 30                     /* Bits 38:30 */
+    .equ L2_SHIFT, 21                     /* Bits 29:21 */
+    .equ L3_SHIFT, 12                     /* Bits 20:12 */
 
-    // Block/page sizes at each level
-    .equ L1_BLOCK_SIZE, 0x40000000        // 1GB
-    .equ L2_BLOCK_SIZE, 0x200000          // 2MB
-    .equ L3_PAGE_SIZE, 0x1000             // 4KB
+    /* Block/page sizes at each level */
+    .equ L1_BLOCK_SIZE, 0x40000000        /* 1GB */
+    .equ L2_BLOCK_SIZE, 0x200000          /* 2MB */
+    .equ L3_PAGE_SIZE, 0x1000             /* 4KB */
 
-    // Calculate page table addresses
-    // We'll place page tables after kernel end for U-Boot compatibility
-    // First, we need to calculate where kernel ends in physical memory
-    adr x26, _kernel_end                  // Get physical address of kernel end
-    add x26, x26, #0x1000                 // Add 4KB padding for safety
-    and x26, x26, #~0xFFF                 // Align to page boundary (4KB)
+    /* Calculate page table addresses
+     * We'll place page tables after kernel end for U-Boot compatibility.
+     * First, we need to calculate where kernel ends in physical memory. */
+    adr x26, _kernel_end                  /* Get physical address of kernel end */
+    add x26, x26, #0x1000                 /* Add 4KB padding for safety */
+    and x26, x26, #~0xFFF                 /* Align to page boundary (4KB) */
     
-    // Clear page table memory first
-    mov x0, x26                           // Start address
-    mov x1, #(9 * PAGE_SIZE)              // Size to clear
-    bl func_zero_memory                   // Call helper function
+    /* Clear page table memory first */
+    mov x0, x26                           /* Start address */
+    mov x1, #(9 * PAGE_SIZE)              /* Size to clear (9 pages total) */
+    bl func_zero_memory                   /* Call helper function */
 
-    // Set up page table pointers
-    mov x25, x26                          // x25 = current free page
+    /* Set up page table pointers */
+    mov x25, x26                          /* x25 = current free page */
     
-    // TTBR0 L0 table
-    mov x23, x25                          // x23 = L0 table for TTBR0
+    /* TTBR0 L0 table */
+    mov x23, x25                          /* x23 = L0 table for TTBR0 */
     add x25, x25, #PAGE_SIZE
     
-    // TTBR0 L1 table
-    mov x22, x25                          // x22 = L1 table for TTBR0
+    /* TTBR0 L1 table */
+    mov x22, x25                          /* x22 = L1 table for TTBR0 */
     add x25, x25, #PAGE_SIZE
     
-    // TTBR0 L2 table for first 512MB
-    mov x21, x25                          // x21 = L2 table for TTBR0
+    /* TTBR0 L2 table for first 512MB */
+    mov x21, x25                          /* x21 = L2 table for TTBR0 */
     add x25, x25, #PAGE_SIZE
     
-    // TTBR0 L2 table for second 512MB (where kernel is)
-    mov x20, x25                          // x20 = L2 table for second 512MB
+    /* TTBR0 L2 table for second 512MB (where kernel is) */
+    mov x20, x25                          /* x20 = L2 table for second 512MB */
     add x25, x25, #PAGE_SIZE
 
-    // Create identity mapping using 2MB blocks
-    // We'll map the first 1GB of physical memory
+    /* Create identity mapping using 2MB blocks.
+     * We'll map the first 1GB of physical memory. */
     
-    // Step 1: L0 entry pointing to L1
-    mov x0, x22                           // L1 table physical address
-    orr x0, x0, #TABLE_DESC               // Table descriptor
-    str x0, [x23]                         // Store in L0[0]
+    /* Step 1: L0 entry pointing to L1 */
+    mov x0, x22                           /* L1 table physical address */
+    orr x0, x0, #TABLE_DESC               /* Table descriptor */
+    str x0, [x23]                         /* Store in L0[0] */
     
-    // Step 2: L1 entries pointing to L2 tables
-    // L1[0] for 0-512MB
-    mov x0, x21                           // L2 table physical address
-    orr x0, x0, #TABLE_DESC               // Table descriptor
-    str x0, [x22]                         // Store in L1[0]
+    /* Step 2: L1 entries pointing to L2 tables */
+    /* L1[0] for 0-512MB */
+    mov x0, x21                           /* L2 table physical address */
+    orr x0, x0, #TABLE_DESC               /* Table descriptor */
+    str x0, [x22]                         /* Store in L1[0] */
     
-    // L1[1] for 512MB-1GB (where kernel is)
-    mov x0, x20                           // L2 table physical address
-    orr x0, x0, #TABLE_DESC               // Table descriptor
-    str x0, [x22, #8]                     // Store in L1[1]
+    /* L1[1] for 512MB-1GB (where kernel is) */
+    mov x0, x20                           /* L2 table physical address */
+    orr x0, x0, #TABLE_DESC               /* Table descriptor */
+    str x0, [x22, #8]                     /* Store in L1[1] */
     
-    // Step 3: L2 entries as 2MB blocks
-    // First map 256 * 2MB = 512MB starting from physical address 0
-    mov x0, #0                            // Physical address
+    /* Step 3: L2 entries as 2MB blocks */
+    /* First map 256 * 2MB = 512MB starting from physical address 0 */
+    mov x0, #0                            /* Physical address */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
-    orr x1, x1, #BLOCK_DESC               // Block descriptor
-    mov x2, x21                           // L2 table base
-    mov x3, #256                          // Number of 2MB blocks
+    orr x1, x1, #BLOCK_DESC               /* Block descriptor */
+    mov x2, x21                           /* L2 table base */
+    mov x3, #256                          /* Number of 2MB blocks */
     
-1:  orr x4, x0, x1                        // Combine address and attributes
-    str x4, [x2], #8                      // Store and increment pointer
-    add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block
-    subs x3, x3, #1                       // Decrement counter
+1:  orr x4, x0, x1                        /* Combine address and attributes */
+    str x4, [x2], #8                      /* Store and increment pointer */
+    add x0, x0, #L2_BLOCK_SIZE            /* Next 2MB block */
+    subs x3, x3, #1                       /* Decrement counter */
     b.ne 1b
     
-    // Now map second 512MB (512MB-1GB) 
-    // L1[1] covers 0x40000000-0x7FFFFFFF
-    mov x0, #0x40000000                   // Start at 1GB
-    mov x2, x20                           // L2 table base for second 512MB
-    mov x3, #256                          // Number of 2MB blocks
+    /* Now map second 512MB */
+    /* L1[1] covers second 512MB region */
+    mov x0, #0x40000000                   /* Start at 1GB */
+    mov x2, x20                           /* L2 table base for second 512MB */
+    mov x3, #256                          /* Number of 2MB blocks */
     
-2:  orr x4, x0, x1                        // Combine address and attributes
-    str x4, [x2], #8                      // Store and increment pointer
-    add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block
-    subs x3, x3, #1                       // Decrement counter
+2:  orr x4, x0, x1                        /* Combine address and attributes */
+    str x4, [x2], #8                      /* Store and increment pointer */
+    add x0, x0, #L2_BLOCK_SIZE            /* Next 2MB block */
+    subs x3, x3, #1                       /* Decrement counter */
     b.ne 2b
 
     /*
-     * Part B: Create Higher-Half Mapping Page Tables (TTBR1)
-     * ======================================================
-     * Map kernel from physical 0x40200000 to virtual 0xFFFF000040200000
-     * Note: QEMU loads Linux images at 0x40200000
+     * Create Higher-Half Mapping Page Tables (TTBR1)
+     * ==============================================
+     * Map kernel from its physical load address to higher virtual addresses
      */
     
     /* Allocate TTBR1 page tables (continuing from x25) */
@@ -302,11 +270,8 @@ el1_entry:
     add x25, x25, #PAGE_SIZE
     
     /* Create TTBR1 higher-half mapping
-     * Virtual address 0xFFFF000040200000 breakdown with T1SZ=16 (48-bit VA):
-     * Top 16 bits (63:48) must be all 1s for TTBR1
-     * L0 index: bits [47:39] = 0x000 (NOT 0x1FE!)
-     * L1 index: bits [38:30] = 0x001
-     * L2 index: bits [29:21] = 0x001 */
+     * With T1SZ=16 (48-bit VA), top 16 bits (63:48) must be all 1s for TTBR1.
+     * The page table walk uses bits [47:0] for indexing. */
     
     /* Step 1: L0 entry at index 0x000 pointing to L1 */
     mov x0, x18                           /* L1 table physical address */
@@ -319,9 +284,9 @@ el1_entry:
     str x0, [x18, #8]                     /* Store in L1[1] (index 1) */
     
     /* Step 3: L2 entries for kernel mapping
-     * We need to map from where QEMU loads us (x28 contains this).
-     * Since we're using 2MB blocks, we need to align to 2MB boundary.
-     * Fixed bug: All L2 entries point to same physical region. */
+     * Map from where we're loaded (x28 contains physical base).
+     * Using 2MB blocks, aligned to 2MB boundary.
+     * All L2 entries point to same physical region (fixed mapping). */
     mov x0, x28                           /* Restore physical base from x28 */
     mov x1, #L2_BLOCK_SIZE - 1            /* Mask for 2MB alignment (0x1FFFFF) */
     bic x0, x0, x1                        /* Clear lower 21 bits to align to 2MB */
@@ -407,8 +372,7 @@ el1_entry:
     .quad higher_half
 
 higher_half:
-    /* We're now running at virtual addresses!
-     * The PC is now at 0xFFFF0000400xxxxx */
+    /* We're now running at virtual addresses in the higher half! */
     
     /* Set up stack pointer using virtual address */
     ldr x0, =_start
