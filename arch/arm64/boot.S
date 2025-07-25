@@ -42,7 +42,28 @@
  * - L3: 8192 entries, each covers 16KB
  */
 
+/*
+ * Linux ARM64 Image Header
+ * ========================
+ * Must be placed at the beginning of the kernel image for U-Boot compatibility.
+ * QEMU also recognizes this header when using -kernel option.
+ */
 _start:
+    /* Executable code - jump over the header to actual code */
+    b       _real_start              // code0: branch to actual code
+    .long   0                        // code1: reserved
+    .quad   0x0                      // text_offset: kernel load offset (0 = 2MB aligned)
+    .quad   _end - _start            // image_size: total image size
+    .quad   0x8                      // flags: LE, 4K pages, bit 3 = anywhere in RAM
+    .quad   0                        // res2: reserved
+    .quad   0                        // res3: reserved  
+    .quad   0                        // res4: reserved
+    .long   0x644d5241               // magic: "ARM\x64" (LE)
+    .long   0                        // res5: reserved
+
+/* Ensure we start at offset 64 (0x40) from _start */
+.org 0x40
+_real_start:
     // U-Boot passes: x0=dtb, x1=0, x2=0, x3=0
     // Linux boot protocol expects: x0=dtb, x1=0, x2=0, x3=0
     // Save registers for U-Boot compatibility
@@ -335,8 +356,8 @@ el1_entry:
     /*
      * Part B: Create Higher-Half Mapping Page Tables (TTBR1)
      * ======================================================
-     * Map kernel from physical 0x40080000 to virtual 0xFFFF000040200000
-     * Note: QEMU loads us at 0x40080000, but we expect to run at 0xFFFF000040200000
+     * Map kernel from physical 0x40200000 to virtual 0xFFFF000040200000
+     * Note: QEMU loads Linux images at 0x40200000
      */
     
     // Allocate TTBR1 page tables (continuing from x25)
@@ -350,11 +371,11 @@ el1_entry:
     add x25, x25, #PAGE_SIZE
     
     // Create TTBR1 higher-half mapping
-    // Virtual address 0xFFFF000040080000 breakdown with T1SZ=16 (48-bit VA):
+    // Virtual address 0xFFFF000040200000 breakdown with T1SZ=16 (48-bit VA):
     // Top 16 bits (63:48) must be all 1s for TTBR1
     // L0 index: bits [47:39] = 0x000 (NOT 0x1FE!)
     // L1 index: bits [38:30] = 0x001
-    // L2 index: bits [29:21] = 0x000
+    // L2 index: bits [29:21] = 0x001
     
     // Step 1: L0 entry at index 0x000 pointing to L1
     mov x0, x18                           // L1 table physical address
@@ -369,7 +390,7 @@ el1_entry:
     // Step 3: L2 entries for kernel mapping
     // We need to map from where QEMU loads us (x28 contains this)
     // Since we're using 2MB blocks, we need to align to 2MB boundary
-    mov x0, x28                           // Physical base where kernel is loaded
+    mov x0, x28                           // Restore physical base from x28 (was clobbered)
     mov x1, #L2_BLOCK_SIZE - 1            // Mask for 2MB alignment (0x1FFFFF)
     bic x0, x0, x1                        // Clear lower 21 bits to align to 2MB
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
@@ -379,7 +400,7 @@ el1_entry:
     
 3:  orr x4, x0, x1                        // Combine address and attributes
     str x4, [x2], #8                      // Store and increment pointer
-    add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block
+    // add x0, x0, #L2_BLOCK_SIZE            // Next 2MB block - COMMENTED OUT: Bug fix - don't increment for higher-half
     subs x3, x3, #1                       // Decrement counter
     b.ne 3b
 
@@ -455,11 +476,6 @@ el1_entry:
 higher_half:
     // We're now running at virtual addresses!
     // The PC is now at 0xFFFF0000400xxxxx
-    
-    // Simple test: Output 'H' to UART to prove we're executing
-    mov x1, #0x09000000                   // UART base (via identity mapping)
-    mov w2, #'H'
-    strb w2, [x1]
     
     // Set up stack pointer using virtual address
     ldr x0, =_start

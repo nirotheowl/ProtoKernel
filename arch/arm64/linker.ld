@@ -1,8 +1,8 @@
 ENTRY(_start)
 
 /* Higher-half kernel configuration */
-KERNEL_PHYS_BASE = 0x40080000;  /* Physical load address (where QEMU loads us) */
-KERNEL_VIRT_BASE = 0xFFFF000040080000;  /* Virtual address in higher half (aligned with physical) */
+KERNEL_PHYS_BASE = 0x40200000;  /* Physical load address (where QEMU loads Linux images) */
+KERNEL_VIRT_BASE = 0xFFFF000040200000;  /* Virtual address in higher half (aligned with physical) */
 
 SECTIONS
 {
@@ -50,6 +50,9 @@ SECTIONS
     . = ALIGN(4096);
     . = . + 0x1000;     /* 4KB guard page */
     _kernel_end = .;
+    
+    /* Define _end for the Linux header image_size calculation */
+    _end = .;
 
     /DISCARD/ : {
         *(.comment)

@@ -1,8 +1,8 @@
 # GDB initialization file for higher-half kernel debugging
 # This handles the virtual/physical address mismatch before MMU is enabled
 
-# Calculate physical address offset (QEMU loads at 0x40080000 instead of 0x40200000)
-set $phys_offset = 0x40080000 - 0x40200000
+# Calculate physical address offset (QEMU loads Linux images at 0x40200000)
+set $phys_offset = 0
 
 # Helper to convert virtual to physical
 define v2p
@@ -58,18 +58,21 @@ define setup-boot-breakpoints
     # Clear existing breakpoints
     delete
     
-    # Set key breakpoints
-    break *0x40080000
-    printf "1. _start (physical 0x40080000)\n"
+    # Set key breakpoints (adjusted for Linux header)
+    break *0x40200000
+    printf "1. _start (Linux header) (physical 0x40200000)\n"
     
-    break *0x40080068
-    printf "2. el1_entry (physical 0x40080068)\n"
+    break *0x40200040
+    printf "2. _real_start (physical 0x40200040)\n"
     
-    break *0x40080090
-    printf "3. Position-independent code (physical 0x40080090)\n"
+    break *0x402000a8
+    printf "3. el1_entry (physical 0x402000a8)\n"
     
-    break *0x40081980
-    printf "4. kernel_main (physical 0x40081980)\n"
+    break *0x40200258
+    printf "4. higher_half jump (physical 0x40200258)\n"
+    
+    break *0x40201b40
+    printf "5. kernel_main (physical 0x40201b40)\n"
 end
 
 # TUI configuration for physical addresses
@@ -99,7 +102,7 @@ end
 
 # Print banner
 printf "\n=== GDB Higher-Half Kernel Debugger ===\n"
-printf "Kernel is loaded at physical 0x40080000 by QEMU\n"
+printf "Kernel is loaded at physical 0x40200000 by QEMU (Linux Image)\n"
 printf "Virtual addresses start at 0xFFFF000040200000\n"
 printf "Type 'help-phys' for available commands\n\n"
 
