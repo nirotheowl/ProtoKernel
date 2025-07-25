@@ -1,0 +1,318 @@
+MICL-ARM-OS KERNEL MEMORY LAYOUT AND MANAGEMENT
+===============================================
+
+Author: Michael W. Lloyd
+Last Updated: 2025-07-25
+Architecture: AArch64 (64-bit ARM)
+
+1. MEMORY MAP OVERVIEW
+======================
+
+1.1 Physical Memory Layout
+--------------------------
+The kernel expects to be loaded by QEMU/U-Boot at physical address 0x40200000.
+
+Physical Address Range    | Size      | Description
+-------------------------|-----------|----------------------------------
+0x00000000 - 0x3FFFFFFF  | 1GB       | Reserved/Unmapped
+0x40000000 - 0x40200000  | 2MB       | Reserved for firmware/bootloader
+0x40200000 - 0x40xxxxxx  | ~40KB     | Kernel image (loaded here)
+0x40xxxxxx - 0x50000000  | ~256MB    | Available RAM (managed by PMM)
+0x08000000 - 0x08010000  | 64KB      | GIC Distributor (MMIO)
+0x08010000 - 0x08020000  | 64KB      | GIC CPU Interface (MMIO)
+0x09000000 - 0x09001000  | 4KB       | PL011 UART (MMIO)
+0x10000000 - 0x3F000000  | 752MB     | PCI MMIO Space
+
+1.2 Virtual Memory Layout
+-------------------------
+The kernel runs in the higher half of the 48-bit virtual address space.
+
+Virtual Address Range         | Maps To            | Description
+-----------------------------|--------------------|---------------------------------
+0x0000000000000000 - ...     | Identity mapped    | User space (future)
+0xFFFF000040200000 - ...     | 0x40200000 - ...   | Kernel code/data (higher half)
+0xFFFF000009000000 - ...     | 0x09000000 - ...   | Device MMIO mappings
+
+2. PAGE TABLE STRUCTURE
+=======================
+
+2.1 Configuration
+-----------------
+- Page Size: 4KB (4096 bytes)
+- Translation Granule: 4KB
+- Virtual Address Space: 48-bit
+- Physical Address Space: 48-bit
+- Page Table Levels: 4 (L0, L1, L2, L3)
+- Entries per Table: 512
+- Entry Size: 8 bytes
+
+2.2 Translation Regime
+----------------------
+Two translation table base registers are used:
+- TTBR0_EL1: User space mappings (0x0000... addresses)
+  - T0SZ = 16 (48-bit address space)
+  - Currently used for identity mapping during boot
+  
+- TTBR1_EL1: Kernel space mappings (0xFFFF... addresses)
+  - T1SZ = 16 (48-bit address space)
+  - Maps kernel to higher half
+
+2.3 Address Translation Breakdown
+---------------------------------
+For a 48-bit virtual address with 4KB pages:
+
+Bits   | Purpose           | Index Bits
+-------|-------------------|------------
+47:39  | L0 index (PGD)    | 9 bits (512 entries)
+38:30  | L1 index (PUD)    | 9 bits (512 entries)
+29:21  | L2 index (PMD)    | 9 bits (512 entries)
+20:12  | L3 index (PTE)    | 9 bits (512 entries)
+11:0   | Page offset       | 12 bits (4KB)
+
+2.4 Page Table Entry Format
+---------------------------
+Each page table entry is 64 bits with the following format:
+
+Bits   | Field              | Description
+-------|--------------------|-----------------------------------------
+63:59  | Upper attributes   | Software use, PXN, UXN, etc.
+58:55  | Reserved           | Must be zero
+54     | UXN                | Unprivileged execute never
+53     | PXN                | Privileged execute never
+52     | Contiguous         | Hint for TLB optimization
+51     | DBM                | Dirty bit modifier (hardware update)
+50:12  | Address            | Physical address (page/table/block)
+11     | nG                 | Not global (ASID-tagged)
+10     | AF                 | Access flag (accessed bit)
+9:8    | SH                 | Shareability (00=NSH, 10=OSH, 11=ISH)
+7:6    | AP                 | Access permissions
+5      | NS                 | Non-secure (for secure state only)
+4:2    | AttrIndx           | Memory attributes index (MAIR_EL1)
+1:0    | Type               | Entry type (fault/block/table/page)
+
+Entry Types:
+- 00: Fault (invalid)
+- 01: Block (L1=1GB, L2=2MB blocks)
+- 11: Table (L0-L2) or Page (L3)
+
+3. BOOT-TIME MEMORY SETUP
+=========================
+
+3.1 Boot Sequence Memory Operations
+-----------------------------------
+1. CPU State Setup (arch/arm64/boot.S:64-106)
+   - Drop from EL3 -> EL2 -> EL1 if necessary
+   - Disable MMU and caches initially
+   - Clear instruction cache and TLB
+
+2. Physical Address Discovery (arch/arm64/boot.S:122-129)
+   - Calculate actual load address using PC-relative addressing
+   - Store in x28 for use throughout boot
+
+3. Page Table Allocation (arch/arm64/boot.S:183-210)
+   - Place page tables after kernel image (_kernel_end + 4KB aligned)
+   - Allocate 9 pages total (36KB):
+     - TTBR0: L0 (1 page) + L1 (1 page) + L2 (2 pages)
+     - TTBR1: L0 (1 page) + L1 (1 page) + L2 (1 page)
+   - Clear all page table memory
+
+4. Identity Mapping Creation (arch/arm64/boot.S:214-254)
+   - Map first 1GB of physical memory for bootstrap
+   - Uses 2MB block mappings at L2 level
+   - Enables MMU to work with physical addresses initially
+
+5. Higher-Half Mapping (arch/arm64/boot.S:261-302)
+   - Create TTBR1 mappings for kernel virtual addresses
+   - Maps 64MB region where kernel is loaded
+   - All L2 entries map to same physical region (fixed mapping)
+
+6. MMU Configuration (arch/arm64/boot.S:304-358)
+   - Configure MAIR_EL1 for memory attributes
+   - Set up TCR_EL1 for translation control
+   - Load TTBR0/TTBR1 with page table addresses
+   - Enable MMU, I-cache, and D-cache
+
+7. Jump to Higher Half (arch/arm64/boot.S:360-374)
+   - Use absolute branch to virtual address
+   - Continue execution at 0xFFFF000040200xxx
+   - Set up virtual stack pointer
+
+3.2 Memory Attributes (MAIR_EL1)
+--------------------------------
+Index | Type                | Attributes
+------|---------------------|------------------------------------------
+0     | Normal memory       | Inner/Outer Write-Back, Non-transient
+1     | Device memory       | nGnRnE (strongly ordered)
+2     | Normal non-cached   | Inner/Outer Non-cacheable
+3     | Normal write-back   | Inner/Outer Write-Back cacheable
+
+4. RUNTIME MEMORY MANAGEMENT
+============================
+
+4.1 Physical Memory Manager (PMM)
+---------------------------------
+The PMM manages physical memory allocation using a bitmap allocator.
+
+Key Features:
+- Bitmap-based tracking (1 bit per 4KB page)
+- Supports single and contiguous page allocation
+- Tracks statistics for monitoring
+- Memory clearing on allocation
+
+PMM Regions:
+- Start: After kernel end (aligned to 4KB)
+- End: 0x40000000 + configured RAM size
+- Bitmap Size: 32KB for 1GB of memory
+
+Reserved Regions:
+- Kernel code/data/BSS
+- PMM bitmap itself
+- Device MMIO regions
+
+4.2 Memory Region Manager (memmap)
+----------------------------------
+Tracks memory regions with type and attribute information.
+
+Region Types:
+- MEM_TYPE_FREE: Available RAM
+- MEM_TYPE_KERNEL_CODE: Kernel .text section
+- MEM_TYPE_KERNEL_DATA: Kernel .data section
+- MEM_TYPE_KERNEL_BSS: Kernel .bss section
+- MEM_TYPE_DEVICE_MMIO: Memory-mapped I/O
+- MEM_TYPE_PAGE_TABLES: Page table storage
+- MEM_TYPE_DMA_COHERENT: DMA-capable memory
+
+Region Attributes:
+- MEM_ATTR_CACHEABLE: Can be cached
+- MEM_ATTR_WRITE_BACK: Write-back caching
+- MEM_ATTR_EXECUTABLE: Contains executable code
+- MEM_ATTR_SECURE: Secure memory
+- MEM_ATTR_DMA_CAPABLE: Suitable for DMA
+
+4.3 Virtual Memory Manager
+--------------------------
+Handles creation and management of page mappings.
+
+Mapping Strategies:
+- 4KB pages: For fine-grained mappings
+- 2MB blocks: For large contiguous regions
+- Automatic selection based on alignment and size
+
+Key Functions:
+- map_page(): Map single 4KB page
+- map_range(): Map using 2MB blocks
+- map_memory(): Intelligent mapping with optimal page size
+
+5. MEMORY PROTECTION AND ATTRIBUTES
+===================================
+
+5.1 Access Permissions
+----------------------
+AP Bits | EL1 Access    | EL0 Access
+--------|---------------|-------------
+00      | Read/Write    | No access
+01      | Read/Write    | Read/Write
+10      | Read-only     | No access
+11      | Read-only     | Read-only
+
+5.2 Shareability Domains
+------------------------
+SH Bits | Domain          | Description
+--------|-----------------|------------------------------------------
+00      | Non-shareable   | Local to single processor
+01      | Reserved        | -
+10      | Outer shareable | Shared across clusters
+11      | Inner shareable | Shared within cluster
+
+5.3 Execute Permissions
+-----------------------
+- PXN (bit 53): Privileged execute never
+- UXN (bit 54): Unprivileged execute never
+
+Used to create:
+- Code regions: Executable, read-only
+- Data regions: Non-executable, read-write
+- Stack regions: Non-executable, read-write
+
+6. CRITICAL MEMORY REGIONS
+==========================
+
+6.1 Kernel Sections
+-------------------
+Section    | Virtual Address        | Attributes
+-----------|------------------------|--------------------------------
+.text      | 0xFFFF000040200000     | RO, Executable, Cacheable
+.rodata    | After .text            | RO, Non-executable, Cacheable
+.data      | After .rodata          | RW, Non-executable, Cacheable
+.bss       | After .data            | RW, Non-executable, Cacheable
+
+6.2 Device Memory Regions
+-------------------------
+Device         | Physical    | Virtual                | Size   | Attributes
+---------------|-------------|------------------------|--------|-----------------
+PL011 UART     | 0x09000000  | 0xFFFF000009000000     | 4KB    | Device, nGnRnE
+GIC Dist       | 0x08000000  | 0xFFFF000008000000     | 64KB   | Device, nGnRnE
+GIC CPU        | 0x08010000  | 0xFFFF000008010000     | 64KB   | Device, nGnRnE
+PCI MMIO       | 0x10000000  | 0xFFFF000010000000     | 752MB  | Device, nGnRnE
+
+7. FUTURE ENHANCEMENTS
+======================
+
+7.1 Planned Features
+--------------------
+1. KASLR Support: Randomize kernel virtual base address
+2. Guard Pages: Add unmapped pages between regions
+3. Stack Guard: Protect against stack overflow
+4. W^X Enforcement: Strict write XOR execute policy
+5. ASID Support: Address Space IDs for TLB efficiency
+6. Large Page Support: 1GB huge pages at L1
+7. Device Tree Parsing: Dynamic memory discovery
+8. NUMA Support: Non-uniform memory access
+
+7.2 Memory Reclamation
+----------------------
+After successful boot to higher half:
+1. Remove identity mappings (TTBR0)
+2. Reclaim boot page tables
+3. Reclaim boot code sections
+4. Compact memory regions
+
+8. DEBUGGING AND DIAGNOSTICS
+============================
+
+8.1 Memory State Inspection
+---------------------------
+The kernel provides functions to inspect:
+- Current page table mappings
+- Physical memory allocation state
+- Memory region information
+- Translation faults and access violations
+
+8.2 Common Issues
+-----------------
+1. Translation Faults: Check page table entries and attributes
+2. Alignment Faults: Ensure proper alignment for block mappings
+3. Permission Faults: Verify AP bits and execute permissions
+4. Coherency Issues: Check shareability and cache attributes
+
+9. APPENDIX: KEY CONSTANTS
+==========================
+
+From paging.h:
+#define PAGE_SIZE         4096
+#define SECTION_SIZE      0x200000     /* 2MB */
+#define PAGE_SHIFT        12
+#define SECTION_SHIFT     21
+#define PTRS_PER_TABLE    512
+
+From boot.S:
+#define KERNEL_PHYS_BASE  0x40200000
+#define KERNEL_VIRT_BASE  0xFFFF000040200000
+
+TCR_EL1 Configuration:
+#define TCR_T0SZ          16           /* 48-bit VA for TTBR0 */
+#define TCR_T1SZ          16           /* 48-bit VA for TTBR1 */
+#define TCR_TG0           0            /* 4KB granule for TTBR0 */
+#define TCR_TG1           2            /* 4KB granule for TTBR1 */
+
+---

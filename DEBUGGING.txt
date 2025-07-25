@@ -1,0 +1,16 @@
+MICL-ARM-OS GDB DEBUGGING
+=========================
+
+## Quick Start
+
+The main debugging tool is `scripts/debug-qemu.sh` which launches QEMU with GDB server and connects GDB with your chosen script:
+
+./scripts/debug-qemu.sh <gdb-script>
+
+## Creating Custom Debug Scripts
+
+1. Create a new .gdb file in the scripts/ directory
+2. Don't include `target remote :1234` - debug-qemu.sh handles connection
+3. Use physical addresses for breakpoints during boot phase
+4. Include clear echo statements to track progress
+5. Always end with `quit` if the script should exit automatically

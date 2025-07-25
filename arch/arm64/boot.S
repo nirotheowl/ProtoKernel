@@ -39,7 +39,7 @@
  */
 _start:
     /* Executable code - jump over the header to actual code */
-    b       _real_start              /* code0: branch to actual code */
+    b       _boot_start              /* code0: branch to actual code */
     .long   0                        /* code1: reserved */
     .quad   0x0                      /* text_offset: kernel load offset (0 = 2MB aligned) */
     .quad   _end - _start            /* image_size: total image size */
@@ -52,7 +52,7 @@ _start:
 
 /* Ensure we start at offset 64 (0x40) from _start */
 .org 0x40
-_real_start:
+_boot_start:
     /* U-Boot passes: x0=dtb, x1=0, x2=0, x3=0
      * Linux boot protocol expects: x0=dtb, x1=0, x2=0, x3=0
      * Save registers for U-Boot compatibility */
