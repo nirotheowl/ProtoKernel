@@ -45,7 +45,7 @@ _start:
     // U-Boot passes: x0=dtb, x1=0, x2=0, x3=0
     // Linux boot protocol expects: x0=dtb, x1=0, x2=0, x3=0
     // Save registers for U-Boot compatibility
-    mov x19, x0  // Save DTB pointer
+    mov x27, x0  // Save DTB pointer in x27 (we'll use x19 for page tables)
     mov x20, x1  // Should be 0
     mov x21, x2  // Should be 0
     mov x22, x3  // Should be 0
@@ -347,16 +347,16 @@ el1_entry:
     add x25, x25, #PAGE_SIZE
     
     // Create TTBR1 higher-half mapping
-    // Virtual address 0xFFFF000040200000 breakdown:
-    // L0 index: (0xFFFF000040200000 >> 39) & 0x1FF = 0x1FE (bit 47 set)
-    // L1 index: (0xFFFF000040200000 >> 30) & 0x1FF = 0x001
-    // L2 index: (0xFFFF000040200000 >> 21) & 0x1FF = 0x001
+    // Virtual address 0xFFFF000040080000 breakdown with T1SZ=16 (48-bit VA):
+    // Top 16 bits (63:48) must be all 1s for TTBR1
+    // L0 index: bits [47:39] = 0x000 (NOT 0x1FE!)
+    // L1 index: bits [38:30] = 0x001
+    // L2 index: bits [29:21] = 0x000
     
-    // Step 1: L0 entry at index 0x1FE pointing to L1
+    // Step 1: L0 entry at index 0x000 pointing to L1
     mov x0, x18                           // L1 table physical address
     orr x0, x0, #TABLE_DESC               // Table descriptor
-    mov x1, #0x1FE                        // L0 index for 0xFFFF range
-    str x0, [x19, x1, lsl #3]             // Store in L0[0x1FE]
+    str x0, [x19]                         // Store in L0[0] - NOT L0[0x1FE]!
     
     // Step 2: L1 entry at index 1 pointing to L2
     mov x0, x17                           // L2 table physical address
@@ -364,9 +364,11 @@ el1_entry:
     str x0, [x18, #8]                     // Store in L1[1] (index 1)
     
     // Step 3: L2 entries for kernel mapping
-    // We need to map from where QEMU loads us (0x40080000) 
-    // The kernel is about 40KB, so we'll map 64MB to be safe
+    // We need to map from where QEMU loads us (x28 contains this)
+    // Since we're using 2MB blocks, we need to align to 2MB boundary
     mov x0, x28                           // Physical base where kernel is loaded
+    mov x1, #L2_BLOCK_SIZE - 1            // Mask for 2MB alignment (0x1FFFFF)
+    bic x0, x0, x1                        // Clear lower 21 bits to align to 2MB
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               // Block descriptor
     mov x2, x17                           // L2 table base
@@ -414,6 +416,16 @@ el1_entry:
     // Set TTBR1_EL1 to our L0 table (higher-half mapping)
     msr ttbr1_el1, x19
     isb
+    
+    // Force a TLB invalidation to ensure new mappings are visible
+    tlbi vmalle1
+    dsb ish
+    isb
+
+    // Set up exception vectors before enabling MMU
+    adr x0, exception_vectors
+    msr vbar_el1, x0
+    isb
 
     // Enable MMU
     mrs x0, sctlr_el1
@@ -424,15 +436,29 @@ el1_entry:
     isb
 
     // We're now running with identity mapping!
-    // For testing, we'll set up a minimal stack and call kernel_main
+    // Time to jump to higher half addresses
     
-    // Set up stack pointer (still using physical address since PA=VA)
-    adr x0, _start
+    // Calculate the virtual address of the higher_half label
+    adr x0, higher_half               // Get physical address of higher_half
+    ldr x1, =higher_half              // Get virtual address of higher_half from linker
+    br x1                             // Jump directly to virtual address
+
+higher_half:
+    // We're now running at virtual addresses!
+    // The PC is now at 0xFFFF0000400xxxxx
+    
+    // Simple test: Output 'H' to UART to prove we're executing
+    mov x1, #0x09000000                   // UART base (via identity mapping)
+    mov w2, #'H'
+    strb w2, [x1]
+    
+    // Set up stack pointer using virtual address
+    ldr x0, =_start
     sub x0, x0, #0x10000                  // 64KB stack below code
     mov sp, x0
 
     // Pass DTB pointer to kernel_main
-    mov x0, x19
+    mov x0, x27                           // Restore DTB pointer from x27
     bl kernel_main
 
     // If kernel_main returns, hang
