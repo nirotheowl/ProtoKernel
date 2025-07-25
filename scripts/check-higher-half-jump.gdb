@@ -9,7 +9,7 @@ echo ==============================================================\n
 delete
 
 # Break at the jump sequence (right before br x1)
-break *0x40080224
+break *0x40080228
 continue
 
 echo \n=== 1. PRE-JUMP STATE ===\n

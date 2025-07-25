@@ -18,9 +18,10 @@ echo Virtual base address: 0xFFFF000040080000\n
 echo Page size: 4KB\n
 echo VA size: 48-bit (T0SZ=T1SZ=16)\n
 
-# Get page table bases
-set $ttbr0_l0 = 0x40077000
-set $ttbr1_l0 = 0x4007b000
+# Get page table bases - they're now after kernel
+# Based on actual calculation: kernel start + 92KB
+set $ttbr0_l0 = 0x40097000
+set $ttbr1_l0 = 0x4009b000
 
 echo \nPage table locations:\n
 echo   TTBR0 L0: 

@@ -5,6 +5,7 @@
 /* Import constants from linker script */
 .extern KERNEL_VIRT_BASE
 .extern KERNEL_PHYS_BASE
+.extern _kernel_end
 
 /*
  * Higher-Half Kernel Implementation Plan
@@ -256,9 +257,11 @@ el1_entry:
     .equ L3_PAGE_SIZE, 0x1000             // 4KB
 
     // Calculate page table addresses
-    // We'll place page tables before kernel start
-    mov x26, x28                          // x28 has our physical base
-    sub x26, x26, #(9 * PAGE_SIZE)       // 9 pages for tables (added one for second L2)
+    // We'll place page tables after kernel end for U-Boot compatibility
+    // First, we need to calculate where kernel ends in physical memory
+    adr x26, _kernel_end                  // Get physical address of kernel end
+    add x26, x26, #0x1000                 // Add 4KB padding for safety
+    and x26, x26, #~0xFFF                 // Align to page boundary (4KB)
     
     // Clear page table memory first
     mov x0, x26                           // Start address
@@ -438,10 +441,16 @@ el1_entry:
     // We're now running with identity mapping!
     // Time to jump to higher half addresses
     
-    // Calculate the virtual address of the higher_half label
-    adr x0, higher_half               // Get physical address of higher_half
-    ldr x1, =higher_half              // Get virtual address of higher_half from linker
-    br x1                             // Jump directly to virtual address
+    // Jump to higher half virtual address
+    // Load the virtual address of higher_half label
+    adr x1, .Lhigher_half_addr        // Get address of constant
+    ldr x1, [x1]                      // Load 64-bit virtual address
+    br x1                             // Jump to virtual address
+    
+    // Store the virtual address as a 64-bit constant
+    .align 3
+.Lhigher_half_addr:
+    .quad higher_half
 
 higher_half:
     // We're now running at virtual addresses!
