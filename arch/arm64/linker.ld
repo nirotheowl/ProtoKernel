@@ -57,4 +57,4 @@ __kernel_virt_start = KERNEL_VIRT_BASE;
 __kernel_size = _kernel_end - __kernel_virt_start;
 
 /* Compatibility symbol */
-__kernel_start = __kernel_phys_start;
+__kernel_start = __kernel_virt_start;

@@ -30,8 +30,10 @@ The kernel runs in the higher half of the 48-bit virtual address space.
 Virtual Address Range         | Maps To            | Description
 -----------------------------|--------------------|---------------------------------
 0x0000000000000000 - ...     | Identity mapped    | User space (future)
-0xFFFF000040200000 - ...     | 0x40200000 - ...   | Kernel code/data (higher half)
+0xFFFF000000000000 - ...     | Various            | Kernel space (TTBR1)
 0xFFFF000009000000 - ...     | 0x09000000 - ...   | Device MMIO mappings
+0xFFFF000040200000 - ...     | 0x40200000 - ...   | Kernel code/data (higher half)
+0xFFFFA00000000000 - ...     | 0x40000000 - ...   | DMAP (Direct physical mapping)
 
 2. PAGE TABLE STRUCTURE
 =======================
@@ -189,19 +191,52 @@ Region Attributes:
 - MEM_ATTR_SECURE: Secure memory
 - MEM_ATTR_DMA_CAPABLE: Suitable for DMA
 
-4.3 Virtual Memory Manager
---------------------------
-Handles creation and management of page mappings.
+4.3 Virtual Memory Manager (VMM)
+--------------------------------
+Handles creation and management of page mappings for kernel and user space.
+
+Core Features:
+- Supports both TTBR0 (user) and TTBR1 (kernel) page tables
+- Handles all 4 levels of page tables (L0-L3)
+- Optimizes mappings using 2MB blocks when possible
+- Provides TLB management functions
+- Tracks page table allocations through PMM
 
 Mapping Strategies:
 - 4KB pages: For fine-grained mappings
-- 2MB blocks: For large contiguous regions
+- 2MB blocks: For large contiguous regions (L2 level)
 - Automatic selection based on alignment and size
 
 Key Functions:
-- map_page(): Map single 4KB page
-- map_range(): Map using 2MB blocks
-- map_memory(): Intelligent mapping with optimal page size
+- vmm_init(): Initialize VMM using existing kernel page tables
+- vmm_map_page(): Map single 4KB page with attributes
+- vmm_map_range(): Map range using optimal block size
+- vmm_create_dmap(): Create direct physical mapping region
+- vmm_virt_to_phys(): Walk page tables to translate addresses
+
+4.4 Direct Map (DMAP) Region
+----------------------------
+The DMAP provides direct access to all physical memory through a simple offset.
+
+DMAP Configuration:
+- Base Address: 0xFFFFA00000000000 (L0[320], L1[0])
+- Maps To: Physical memory starting at 0x40000000
+- Conversion: PHYS_TO_DMAP(pa) = pa + 0xFFFFA00000000000 - 0x40000000
+- Size: Maps all available physical memory (e.g., 1GB)
+- Page Size: Uses efficient 2MB block mappings
+
+Benefits:
+- O(1) physical to virtual translation
+- No page table walks needed for physical access
+- Enables efficient page clearing and copying
+- Used by PMM for zeroing allocated pages
+- Simplifies kernel memory management
+
+Usage:
+- PMM uses DMAP addresses after initialization
+- Kernel can directly access any physical page
+- No need for temporary mappings
+- Critical for performance in memory-intensive operations
 
 5. MEMORY PROTECTION AND ATTRIBUTES
 ===================================
@@ -254,6 +289,15 @@ PL011 UART     | 0x09000000  | 0xFFFF000009000000     | 4KB    | Device, nGnRnE
 GIC Dist       | 0x08000000  | 0xFFFF000008000000     | 64KB   | Device, nGnRnE
 GIC CPU        | 0x08010000  | 0xFFFF000008010000     | 64KB   | Device, nGnRnE
 PCI MMIO       | 0x10000000  | 0xFFFF000010000000     | 752MB  | Device, nGnRnE
+
+6.3 DMAP Region
+---------------
+The Direct Map region provides efficient access to all physical memory:
+
+Physical Range | Virtual Range              | Size   | Attributes
+---------------|----------------------------|--------|--------------------------
+0x40000000 -   | 0xFFFFA00000000000 -       | All    | Normal, RW, Cacheable
+0x80000000     | 0xFFFFA00040000000         | RAM    | 2MB block mappings
 
 7. FUTURE ENHANCEMENTS
 ======================
@@ -308,6 +352,13 @@ From paging.h:
 From boot.S:
 #define KERNEL_PHYS_BASE  0x40200000
 #define KERNEL_VIRT_BASE  0xFFFF000040200000
+
+From vmparam.h:
+#define DMAP_BASE         0xFFFFA00000000000  /* Direct map base */
+#define DMAP_SIZE         0x0000600000000000  /* 96TB direct map region */
+#define PHYS_BASE         0x40000000          /* Physical memory base */
+#define PHYS_TO_DMAP(pa)  ((pa) + DMAP_BASE - PHYS_BASE)
+#define DMAP_TO_PHYS(va)  ((va) - DMAP_BASE + PHYS_BASE)
 
 TCR_EL1 Configuration:
 #define TCR_T0SZ          16           /* 48-bit VA for TTBR0 */

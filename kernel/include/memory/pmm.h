@@ -51,4 +51,7 @@ void pmm_get_stats(pmm_stats_t* stats);
 // Check if address is available
 int pmm_is_available(uint64_t pa);
 
+// Get end of managed physical memory
+uint64_t pmm_get_memory_end(void);
+
 #endif // PMM_H

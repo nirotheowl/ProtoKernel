@@ -1,4 +1,6 @@
 #include <memory/pmm.h>
+#include <memory/vmparam.h>
+#include <memory/vmm.h>
 #include <uart.h>
 #include <stdint.h>
 
@@ -37,8 +39,11 @@ static uint64_t page_to_addr(uint64_t page) {
 
 // Initialize the physical memory manager
 void pmm_init(uint64_t kernel_end, uint64_t mem_size) {
+    // kernel_end is a virtual address, convert to physical
+    uint64_t kernel_end_phys = VIRT_TO_PHYS(kernel_end);
+    
     // Align kernel_end to page boundary
-    pmm_start = (kernel_end + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
+    pmm_start = (kernel_end_phys + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
     pmm_end = 0x40000000 + mem_size;  // Assuming RAM starts at 0x40000000
     
     // Calculate total pages
@@ -50,16 +55,31 @@ void pmm_init(uint64_t kernel_end, uint64_t mem_size) {
         pmm_bitmap[i] = 0;
     }
     
-    // Reserve kernel memory (0x40000000 to kernel_end)
-    pmm_reserve_region(0x40000000, kernel_end - 0x40000000, "Kernel");
+    // Reserve kernel memory (0x40000000 to kernel_end_phys)
+    pmm_reserve_region(0x40000000, kernel_end_phys - 0x40000000, "Kernel");
     
     // Reserve the PMM bitmap itself
     uint64_t bitmap_size = sizeof(pmm_bitmap);
-    uint64_t bitmap_addr = (uint64_t)pmm_bitmap;
-    pmm_reserve_region(bitmap_addr, bitmap_size, "PMM Bitmap");
+    uint64_t bitmap_vaddr = (uint64_t)pmm_bitmap;
+    uint64_t bitmap_paddr = VIRT_TO_PHYS(bitmap_vaddr);
+    pmm_reserve_region(bitmap_paddr, bitmap_size, "PMM Bitmap");
     
     // Reserve UART region
     pmm_reserve_region(0x09000000, 0x1000, "PL011 UART");
+    
+    // Print initialization status
+    uart_puts("\nPhysical Memory Manager initialized:\n");
+    uart_puts("  Start: ");
+    uart_puthex(pmm_start);
+    uart_puts("\n  End: ");
+    uart_puthex(pmm_end);
+    uart_puts("\n  Total pages: ");
+    uart_puthex(pmm_stats.total_pages);
+    uart_puts("\n  Free pages: ");
+    uart_puthex(pmm_stats.free_pages);
+    uart_puts("\n  Page size: ");
+    uart_puthex(PMM_PAGE_SIZE);
+    uart_puts("\n");
 }
 
 // Allocate a single page
@@ -73,8 +93,15 @@ uint64_t pmm_alloc_page(void) {
             
             uint64_t pa = page_to_addr(i);
             
-            // Clear the page
-            uint64_t* page_ptr = (uint64_t*)pa;
+            // Clear the page - use DMAP if available, otherwise use identity mapping
+            uint64_t va;
+            if (vmm_is_dmap_ready()) {
+                va = PHYS_TO_DMAP(pa);
+            } else {
+                // Use identity mapping (physical address directly)
+                va = pa;
+            }
+            uint64_t* page_ptr = (uint64_t*)va;
             for (size_t j = 0; j < PMM_PAGE_SIZE / sizeof(uint64_t); j++) {
                 page_ptr[j] = 0;
             }
@@ -119,8 +146,15 @@ uint64_t pmm_alloc_pages(size_t count) {
                 
                 uint64_t pa = page_to_addr(start);
                 
-                // Clear the pages
-                uint64_t* page_ptr = (uint64_t*)pa;
+                // Clear the pages - use DMAP if available, otherwise use identity mapping
+                uint64_t va;
+                if (vmm_is_dmap_ready()) {
+                    va = PHYS_TO_DMAP(pa);
+                } else {
+                    // Use identity mapping (physical address directly)
+                    va = pa;
+                }
+                uint64_t* page_ptr = (uint64_t*)va;
                 for (size_t j = 0; j < (PMM_PAGE_SIZE * count) / sizeof(uint64_t); j++) {
                     page_ptr[j] = 0;
                 }
@@ -203,4 +237,9 @@ int pmm_is_available(uint64_t pa) {
     
     uint64_t page = addr_to_page(pa);
     return !pmm_test_bit(page);
+}
+
+// Get end of managed physical memory
+uint64_t pmm_get_memory_end(void) {
+    return pmm_end;
 }

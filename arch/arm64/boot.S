@@ -126,6 +126,44 @@ el1_entry:
     sub x29, x29, x30       /* Get offset from virtual base */
     sub x28, x28, x29       /* Calculate physical base address */
     /* Now x28 = physical address where kernel is loaded */
+    
+    /*
+     * Copy DTB to a safe location if needed
+     * U-Boot may place DTB outside our identity-mapped region
+     * We'll copy it to a location after our kernel that will be mapped
+     */
+    mov x0, x27                           /* x0 = DTB pointer from x27 */
+    cbz x0, .Lno_dtb                     /* Skip if no DTB */
+    
+    /* Check if DTB is outside identity-mapped region (>= 1GB) */
+    mov x1, #0x40000000                   /* 1GB boundary */
+    cmp x0, x1
+    b.lo .Ldtb_ok                        /* DTB is in mapped region, no need to copy */
+    
+    /* DTB needs to be copied - place it after kernel end */
+    adr x1, _kernel_end                   /* Get physical address of kernel end */
+    add x1, x1, #0x10000                  /* Add 64KB offset for safety */
+    and x1, x1, #~0xFFF                   /* Align to page boundary */
+    
+    /* Copy DTB header first to get size */
+    ldr w2, [x0, #4]                      /* Load totalsize field (offset 4) */
+    rev w2, w2                            /* Convert from big-endian */
+    
+    /* Copy DTB data */
+    mov x3, x0                            /* Source */
+    mov x4, x1                            /* Destination */
+    mov x5, x2                            /* Size */
+.Lcopy_dtb_loop:
+    cbz x5, .Lcopy_dtb_done
+    ldrb w6, [x3], #1
+    strb w6, [x4], #1
+    sub x5, x5, #1
+    b .Lcopy_dtb_loop
+.Lcopy_dtb_done:
+    mov x27, x1                           /* Update DTB pointer to new location */
+    
+.Ldtb_ok:
+.Lno_dtb:
 
 
     /*
@@ -186,7 +224,7 @@ el1_entry:
     
     /* Clear page table memory first */
     mov x0, x26                           /* Start address */
-    mov x1, #(9 * PAGE_SIZE)              /* Size to clear (9 pages total) */
+    mov x1, #(10 * PAGE_SIZE)             /* Size to clear (10 pages total - added 1 for device L2) */
     bl func_zero_memory                   /* Call helper function */
 
     /* Set up page table pointers */
@@ -266,7 +304,10 @@ el1_entry:
     mov x18, x25                          /* x18 = L1 table for TTBR1 */
     add x25, x25, #PAGE_SIZE
     
-    mov x17, x25                          /* x17 = L2 table for TTBR1 */
+    mov x17, x25                          /* x17 = L2 table for TTBR1 kernel */
+    add x25, x25, #PAGE_SIZE
+    
+    mov x16, x25                          /* x16 = L2 table for TTBR1 devices */
     add x25, x25, #PAGE_SIZE
     
     /* Create TTBR1 higher-half mapping
@@ -278,8 +319,13 @@ el1_entry:
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
     str x0, [x19]                         /* Store in L0[0] - NOT L0[0x1FE]! */
     
-    /* Step 2: L1 entry at index 1 pointing to L2 */
-    mov x0, x17                           /* L2 table physical address */
+    /* Step 2a: L1 entry at index 0 pointing to device L2 */
+    mov x0, x16                           /* L2 table physical address for devices */
+    orr x0, x0, #TABLE_DESC               /* Table descriptor */
+    str x0, [x18]                         /* Store in L1[0] (index 0) */
+    
+    /* Step 2b: L1 entry at index 1 pointing to kernel L2 */
+    mov x0, x17                           /* L2 table physical address for kernel */
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
     str x0, [x18, #8]                     /* Store in L1[1] (index 1) */
     
@@ -301,11 +347,31 @@ el1_entry:
     subs x3, x3, #1                       /* Decrement counter */
     b.ne 3b
 
+    /* Step 4: L2 entries for device mapping
+     * Map UART at physical 0x09000000 to virtual 0xFFFF000009000000
+     * L1[0] covers 0x00000000-0x40000000, UART is at offset 0x09000000
+     * That's entry 0x09000000 / 0x200000 = 72 in the L2 table */
+    mov x0, #0x09000000                   /* UART physical address */
+    mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_DEVICE | ATTR_AP_RW_EL1
+    orr x1, x1, #ATTR_UXN | ATTR_PXN     /* No execute for device memory */
+    orr x1, x1, #BLOCK_DESC               /* Block descriptor */
+    orr x4, x0, x1                        /* Combine address and attributes */
+    mov x2, x16                           /* Device L2 table base */
+    str x4, [x2, #(72 * 8)]               /* Store at L2[72] */
+    
+    /* Also map GIC regions while we're at it */
+    /* GIC Distributor at 0x08000000 (entry 64) */
+    mov x0, #0x08000000
+    orr x4, x0, x1                        /* Same attributes as UART */
+    str x4, [x2, #(64 * 8)]               /* Store at L2[64] */
+    
+    /* GIC CPU Interface at 0x08010000 is in same 2MB block, already covered */
+
     /* Configure MAIR_EL1 (Memory Attribute Indirection Register)
      * MAIR_EL1 defines memory types for use in page table entries:
      * Index 0: Normal memory, Inner/Outer Write-Back Non-transient
      * Index 1: Device memory, nGnRnE */
-    mov x0, #0xFF                         /* Normal memory attributes */
+    mov x0, #0x00FF                       /* Index 0: Normal memory, Index 1: Device */
     msr mair_el1, x0
 
     /* Configure TCR_EL1 (Translation Control Register)
