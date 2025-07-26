@@ -107,7 +107,7 @@ printf "Virtual addresses start at 0xFFFF000040200000\n"
 printf "Type 'help-phys' for available commands\n\n"
 
 # Set default breakpoints
-setup-boot-breakpoints
+# setup-boot-breakpoints  # Commented out to avoid interfering with custom debugging
 
 # Show initial help
 help-phys

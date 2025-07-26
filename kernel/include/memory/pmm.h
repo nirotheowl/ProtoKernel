@@ -54,4 +54,7 @@ int pmm_is_available(uint64_t pa);
 // Get end of managed physical memory
 uint64_t pmm_get_memory_end(void);
 
+// Print memory statistics
+void pmm_print_stats(void);
+
 #endif // PMM_H

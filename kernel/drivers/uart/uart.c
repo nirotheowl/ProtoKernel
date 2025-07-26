@@ -1,16 +1,31 @@
 #include <uart.h>
 #include <stddef.h>
+#include <platform/devmap.h>
 
-#define UART0_BASE 0xFFFF000009000000
-#define UART0_DR   *((volatile uint32_t*)(UART0_BASE + 0x00))
-#define UART0_FR   *((volatile uint32_t*)(UART0_BASE + 0x18))
+static volatile uint32_t *uart_base = NULL;
+
+#define UART0_DR   (uart_base[0x00/4])
+#define UART0_FR   (uart_base[0x18/4])
 
 void uart_init(void) {
+    // Start with NULL base until devmap is ready
+    uart_base = NULL;
+    
     // PL011 UART is already initialized by QEMU
     // In a real implementation, we'd configure baud rate, data bits, etc.
 }
 
+void uart_update_base(void) {
+    // Called after devmap is initialized to set UART base
+    uart_base = (volatile uint32_t *)devmap_device_va(0x09000000);
+}
+
 void uart_putc(char c) {
+    // Early return if UART not yet initialized
+    if (!uart_base) {
+        return;
+    }
+    
     // Wait for transmit FIFO to not be full
     while (UART0_FR & (1 << 5)) {
         __asm__ volatile("nop");

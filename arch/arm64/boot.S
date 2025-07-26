@@ -224,7 +224,7 @@ el1_entry:
     
     /* Clear page table memory first */
     mov x0, x26                           /* Start address */
-    mov x1, #(10 * PAGE_SIZE)             /* Size to clear (10 pages total - added 1 for device L2) */
+    mov x1, #(10 * PAGE_SIZE)             /* Size to clear (10 pages total) */
     bl func_zero_memory                   /* Call helper function */
 
     /* Set up page table pointers */
@@ -332,10 +332,15 @@ el1_entry:
     /* Step 3: L2 entries for kernel mapping
      * Map from where we're loaded (x28 contains physical base).
      * Using 2MB blocks, aligned to 2MB boundary.
-     * All L2 entries point to same physical region (fixed mapping). */
-    mov x0, x28                           /* Restore physical base from x28 */
-    mov x1, #L2_BLOCK_SIZE - 1            /* Mask for 2MB alignment (0x1FFFFF) */
-    bic x0, x0, x1                        /* Clear lower 21 bits to align to 2MB */
+     * Map 32 consecutive 2MB blocks for 64MB total coverage. 
+     * 
+     * CRITICAL: Virtual 0xFFFF000040200000 has L2 index 1, not 0!
+     * So we need to adjust our mapping:
+     * - L2[0] should map physical 0x40000000 (not used by kernel)
+     * - L2[1] should map physical 0x40200000 (where kernel is)
+     * - L2[2] should map physical 0x40400000, etc.
+     */
+    mov x0, #0x40000000                   /* Start from 2MB-aligned base */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */
     mov x2, x17                           /* L2 table base */
@@ -343,29 +348,20 @@ el1_entry:
     
 3:  orr x4, x0, x1                        /* Combine address and attributes */
     str x4, [x2], #8                      /* Store and increment pointer */
-    /* Don't increment physical address - all entries map to same region */
+    add x0, x0, #L2_BLOCK_SIZE            /* Next 2MB physical block */
     subs x3, x3, #1                       /* Decrement counter */
     b.ne 3b
 
-    /* Step 4: L2 entries for device mapping
+    /* Step 4: Temporary UART mapping for debugging
      * Map UART at physical 0x09000000 to virtual 0xFFFF000009000000
-     * L1[0] covers 0x00000000-0x40000000, UART is at offset 0x09000000
-     * That's entry 0x09000000 / 0x200000 = 72 in the L2 table */
-    mov x0, #0x09000000                   /* UART physical address */
-    mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_DEVICE | ATTR_AP_RW_EL1
-    orr x1, x1, #ATTR_UXN | ATTR_PXN     /* No execute for device memory */
-    orr x1, x1, #BLOCK_DESC               /* Block descriptor */
-    orr x4, x0, x1                        /* Combine address and attributes */
-    mov x2, x16                           /* Device L2 table base */
-    str x4, [x2, #(72 * 8)]               /* Store at L2[72] */
-    
-    /* Also map GIC regions while we're at it */
-    /* GIC Distributor at 0x08000000 (entry 64) */
-    mov x0, #0x08000000
-    orr x4, x0, x1                        /* Same attributes as UART */
-    str x4, [x2, #(64 * 8)]               /* Store at L2[64] */
-    
-    /* GIC CPU Interface at 0x08010000 is in same 2MB block, already covered */
+     * This will be replaced by devmap but needed for early debug */
+    // mov x0, #0x09000000                   /* UART physical address */
+    // mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_DEVICE | ATTR_AP_RW_EL1
+    // orr x1, x1, #ATTR_UXN | ATTR_PXN     /* No execute for device memory */
+    // orr x1, x1, #BLOCK_DESC               /* Block descriptor */
+    // orr x4, x0, x1                        /* Combine address and attributes */
+    // mov x2, x16                           /* Device L2 table base */
+    // str x4, [x2, #(72 * 8)]               /* Store at L2[72] */
 
     /* Configure MAIR_EL1 (Memory Attribute Indirection Register)
      * MAIR_EL1 defines memory types for use in page table entries:

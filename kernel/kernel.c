@@ -13,9 +13,53 @@
 // #include <tests/fdt_tests.h>
 #include <drivers/fdt.h>
 #include <memory/vmm.h>
+#include <platform/devmap.h>
+
+// External symbols from linker script
+extern char __kernel_start;
+extern char _kernel_end;
 
 void kernel_main(void* dtb) {
+    // Initialize UART with temporary boot.S mapping
+    uart_init();
+    // uart_puts("\nKernel starting...\n");
     
+    // Initialize memory subsystems first
+    // uart_puts("Initializing memmap...\n");
+    memmap_init();
+    
+    // Parse Device Tree to get memory information
+    memory_info_t mem_info;
+    if (!fdt_get_memory(dtb, &mem_info)) {
+        // Use defaults if FDT parse fails
+        mem_info.count = 1;
+        mem_info.regions[0].base = 0x40000000;
+        mem_info.regions[0].size = 256 * 1024 * 1024;
+        mem_info.total_size = 256 * 1024 * 1024;
+    }
+    
+    // Initialize PMM
+    // uart_puts("Initializing PMM...\n");
+    pmm_init((uint64_t)&_kernel_end, mem_info.regions[0].size);
+    
+    // Initialize VMM
+    // uart_puts("Initializing VMM...\n");
+    vmm_init();
+    
+    // Create DMAP region for all physical memory
+    // This must be done before device mappings so PMM can use DMAP for page clearing
+    // uart_puts("Creating DMAP...\n");
+    vmm_create_dmap();
+    
+    // Initialize Device Mapping system
+    // uart_puts("Initializing devmap...\n");
+    devmap_init();
+    
+    // Now initialize and update UART with proper mapping
+    uart_init();
+    uart_update_base();
+    
+    // Now we can use UART!
     uart_puts("\n=======================================\n");
     uart_puts("ARM64 Kernel Booting...\n");
     uart_puts("=======================================\n\n");
@@ -35,49 +79,28 @@ void kernel_main(void* dtb) {
     uart_puts("\nSystem Information:\n");
     
     uart_puts("- Kernel loaded at: ");
-    extern char __kernel_start;
     uart_puthex((uint64_t)&__kernel_start);
     uart_puts("\n");
     
     uart_puts("- Kernel ends at: ");
-    extern char _kernel_end;
     uart_puthex((uint64_t)&_kernel_end);
     uart_puts("\n");
     
-    // Parse Device Tree to get memory information
-    memory_info_t mem_info;
-    uart_puts("\nParsing Device Tree...\n");
-    
-    if (!fdt_get_memory(dtb, &mem_info)) {
-        uart_puts("WARNING: Failed to parse memory from DTB!\n");
-        uart_puts("Using default: 256MB at 0x40000000\n");
-        mem_info.count = 1;
-        mem_info.regions[0].base = 0x40000000;
-        mem_info.regions[0].size = 256 * 1024 * 1024;
-        mem_info.total_size = 256 * 1024 * 1024;
-    } else {
-        uart_puts("Successfully parsed memory from DTB\n");
-    }
-    
-    // Print memory information
+    // Report memory information that was parsed earlier
+    uart_puts("\nMemory Configuration:\n");
     fdt_print_memory_info(&mem_info);
     
-    // Initialize Memory Map Manager
-    memmap_init();
-    
-    // Initialize Physical Memory Manager with actual memory size
-    // For now, use the first region's size (assuming contiguous memory from 0x40000000)
-    pmm_init((uint64_t)&_kernel_end, mem_info.regions[0].size);
-    
-    // Initialize Virtual Memory Manager
-    vmm_init();
+    uart_puts("\nDevice mappings initialized successfully\n");
     
     // Debug: Check what's in the page tables
     vmm_debug_walk(vmm_get_kernel_context(), 0xFFFF000040200000UL);  // Kernel address
     vmm_debug_walk(vmm_get_kernel_context(), 0xFFFFA00000000000UL);  // DMAP start
     
-    // Create DMAP region for all physical memory
-    vmm_create_dmap();
+    // Print device mappings
+    devmap_print_mappings();
+    
+    // Print memory statistics
+    pmm_print_stats();
     
     // FDT tests have been verified to work correctly
     // run_fdt_tests();
