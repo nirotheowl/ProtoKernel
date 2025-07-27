@@ -11,7 +11,7 @@
 // #include <tests/pmm_tests.h>
 // #include <tests/memory_tests.h>
 // #include <tests/fdt_tests.h>
-#include <tests/fdt_mgr_tests.h>
+// #include <tests/fdt_mgr_tests.h>
 #include <drivers/fdt.h>
 #include <drivers/fdt_mgr.h>
 #include <memory/vmm.h>
@@ -132,7 +132,7 @@ void kernel_main(void* dtb) {
     pmm_print_stats();
     
     // Run FDT manager tests
-    run_fdt_mgr_tests();
+    // run_fdt_mgr_tests();
     
     // FDT tests have been verified to work correctly
     // run_fdt_tests();

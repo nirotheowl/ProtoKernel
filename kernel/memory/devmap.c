@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 /* Device mapping configuration */
+/* FIXME: Max entries is probably too small */ 
 #define DEVMAP_MAX_ENTRIES      64
 #define DEVMAP_VA_START         0xFFFF000100000000UL  /* Start after kernel space */
 #define DEVMAP_VA_END           0xFFFF000200000000UL  /* 1TB for device mappings */

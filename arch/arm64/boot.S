@@ -334,8 +334,7 @@ el1_entry:
      * Using 2MB blocks, aligned to 2MB boundary.
      * Map 32 consecutive 2MB blocks for 64MB total coverage. 
      * 
-     * CRITICAL: Virtual 0xFFFF000040200000 has L2 index 1, not 0!
-     * So we need to adjust our mapping:
+     * The mapping is as follows:
      * - L2[0] should map physical 0x40000000 (not used by kernel)
      * - L2[1] should map physical 0x40200000 (where kernel is)
      * - L2[2] should map physical 0x40400000, etc.
