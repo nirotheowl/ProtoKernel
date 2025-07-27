@@ -57,4 +57,16 @@ void fdt_print_memory_info(const memory_info_t *mem_info);
 #define fdt32_to_cpu(x) __builtin_bswap32(x)
 #define fdt64_to_cpu(x) __builtin_bswap64(x)
 
+/* FDT node iteration macros (libfdt compatibility) */
+#define fdt_for_each_subnode(node, fdt, parent)    \
+    for (node = fdt_first_subnode(fdt, parent);   \
+         node >= 0;                                \
+         node = fdt_next_subnode(fdt, node))
+
+/* FDT navigation functions */
+int fdt_first_subnode(const void *fdt, int offset);
+int fdt_next_subnode(const void *fdt, int offset);
+const char *fdt_get_name(const void *fdt, int nodeoffset, int *len);
+int fdt_subnode_offset(const void *fdt, int parentoffset, const char *name);
+
 #endif /* _FDT_H_ */

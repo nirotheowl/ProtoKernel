@@ -11,7 +11,9 @@
 // #include <tests/pmm_tests.h>
 // #include <tests/memory_tests.h>
 // #include <tests/fdt_tests.h>
+#include <tests/fdt_mgr_tests.h>
 #include <drivers/fdt.h>
+#include <drivers/fdt_mgr.h>
 #include <memory/vmm.h>
 #include <platform/devmap.h>
 
@@ -24,14 +26,20 @@ void kernel_main(void* dtb) {
     uart_init();
     // uart_puts("\nKernel starting...\n");
     
+    // Initialize FDT manager early
+    if (!fdt_mgr_init(dtb)) {
+        uart_puts("WARNING: Failed to initialize FDT manager\n");
+    }
+    
     // Initialize memory subsystems first
     // uart_puts("Initializing memmap...\n");
     memmap_init();
     
-    // Parse Device Tree to get memory information
+    // Parse Device Tree to get memory information using FDT manager
     memory_info_t mem_info;
-    if (!fdt_get_memory(dtb, &mem_info)) {
+    if (!fdt_mgr_get_memory_info(&mem_info)) {
         // Use defaults if FDT parse fails
+        uart_puts("WARNING: Failed to parse memory from FDT, using defaults\n");
         mem_info.count = 1;
         mem_info.regions[0].base = 0x40000000;
         mem_info.regions[0].size = 256 * 1024 * 1024;
@@ -42,6 +50,11 @@ void kernel_main(void* dtb) {
     // uart_puts("Initializing PMM...\n");
     pmm_init((uint64_t)&_kernel_end, mem_info.regions[0].size);
     
+    // Reserve FDT pages in PMM before any allocations
+    if (!fdt_mgr_reserve_pages()) {
+        uart_puts("WARNING: Failed to reserve FDT pages\n");
+    }
+    
     // Initialize VMM
     // uart_puts("Initializing VMM...\n");
     vmm_init();
@@ -51,6 +64,11 @@ void kernel_main(void* dtb) {
     // uart_puts("Creating DMAP...\n");
     vmm_create_dmap();
     
+    // Map FDT to permanent virtual address
+    if (!fdt_mgr_map_virtual()) {
+        uart_puts("WARNING: Failed to map FDT to virtual memory\n");
+    }
+    
     // Initialize Device Mapping system
     // uart_puts("Initializing devmap...\n");
     devmap_init();
@@ -58,8 +76,8 @@ void kernel_main(void* dtb) {
     // Now initialize and update UART with proper mapping
     uart_init();
     uart_update_base();
-    
-    // Now we can use UART!
+   
+    // Start outputting kernel boot messages 
     uart_puts("\n=======================================\n");
     uart_puts("ARM64 Kernel Booting...\n");
     uart_puts("=======================================\n\n");
@@ -67,7 +85,15 @@ void kernel_main(void* dtb) {
     uart_puts("Kernel entry point: kernel_main()\n");
     uart_puts("Device Tree Blob at: ");
     uart_puthex((uint64_t)dtb);
-    uart_puts("\n");
+    uart_puts(" (");
+    if (dtb) {
+        uint32_t *magic_ptr = (uint32_t *)dtb;
+        uart_puts("magic=");
+        uart_puthex(*magic_ptr);
+    } else {
+        uart_puts("NULL");
+    }
+    uart_puts(")\n");
     
     uart_puts("\nCurrent Exception Level: ");
     uint64_t current_el;
@@ -90,6 +116,9 @@ void kernel_main(void* dtb) {
     uart_puts("\nMemory Configuration:\n");
     fdt_print_memory_info(&mem_info);
     
+    // Report FDT manager state
+    fdt_mgr_print_info();
+    
     uart_puts("\nDevice mappings initialized successfully\n");
     
     // Debug: Check what's in the page tables
@@ -101,6 +130,9 @@ void kernel_main(void* dtb) {
     
     // Print memory statistics
     pmm_print_stats();
+    
+    // Run FDT manager tests
+    run_fdt_mgr_tests();
     
     // FDT tests have been verified to work correctly
     // run_fdt_tests();

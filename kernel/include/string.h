@@ -25,4 +25,13 @@ static inline char* strcpy(char* dest, const char* src) {
     return dest;
 }
 
+static inline char* strncpy(char* dest, const char* src, size_t n) {
+    char* d = dest;
+    while (n-- && (*d++ = *src++) != '\0');
+    while (n-- > 0) {
+        *d++ = '\0';
+    }
+    return dest;
+}
+
 #endif

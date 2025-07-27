@@ -239,6 +239,24 @@ void pmm_reserve_region(uint64_t base, uint64_t size, const char* name) {
     }
 }
 
+// Reserve a single page
+void pmm_reserve_page(uint64_t pa) {
+    // Check if the page is within managed memory
+    if (pa < pmm_start || pa >= pmm_end) {
+        return;  // Outside managed range
+    }
+    
+    // Align to page boundary
+    pa = pa & ~(PMM_PAGE_SIZE - 1);
+    
+    uint64_t page = addr_to_page(pa);
+    if (!pmm_test_bit(page)) {
+        pmm_set_bit(page);
+        pmm_stats.free_pages--;
+        pmm_stats.reserved_pages++;
+    }
+}
+
 // Get memory statistics
 void pmm_get_stats(pmm_stats_t* stats) {
     if (stats) {
@@ -307,4 +325,19 @@ void pmm_print_stats(void) {
     uart_puts(" - ");
     uart_puthex(boot_pt_start + BOOT_PAGE_TABLE_SIZE);
     uart_puts("\n");
+    
+    // Show FDT reservation if available
+    extern void *fdt_mgr_get_phys_addr(void);
+    extern size_t fdt_mgr_get_size(void);
+    void *fdt_phys = fdt_mgr_get_phys_addr();
+    size_t fdt_size = fdt_mgr_get_size();
+    if (fdt_phys && fdt_size) {
+        uart_puts("FDT:              ");
+        uart_puthex((uint64_t)fdt_phys);
+        uart_puts(" - ");
+        uart_puthex((uint64_t)fdt_phys + fdt_size);
+        uart_puts(" (");
+        uart_puthex(fdt_size);
+        uart_puts(" bytes)\n");
+    }
 }

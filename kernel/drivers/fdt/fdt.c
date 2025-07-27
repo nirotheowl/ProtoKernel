@@ -50,7 +50,6 @@ bool fdt_valid(void *fdt) {
         return false;
     }
     
-    
     uint32_t magic = fdt32_to_cpu(header->magic);
     if (magic != FDT_MAGIC) {
         uart_puts("FDT: Invalid magic number\n");
@@ -194,4 +193,180 @@ void fdt_print_memory_info(const memory_info_t *mem_info) {
     uart_puts(" (");
     uart_puthex(mem_info->total_size / (1024 * 1024));
     uart_puts(" MB)\n");
+}
+
+/* FDT navigation functions for libfdt compatibility */
+
+/* Get first subnode of a node */
+int fdt_first_subnode(const void *fdt, int offset) {
+    fdt_header_t *header = (fdt_header_t *)fdt;
+    uint32_t struct_off = fdt32_to_cpu(header->off_dt_struct);
+    uint32_t struct_size = fdt32_to_cpu(header->size_dt_struct);
+    
+    /* Validate offset is within bounds */
+    if (offset < 0 || offset >= struct_size) {
+        return -1;
+    }
+    
+    uint32_t *p = (uint32_t *)((uint8_t *)fdt + struct_off + offset);
+    uint32_t *end = (uint32_t *)((uint8_t *)fdt + struct_off + struct_size);
+    int depth = -1;
+    bool skip_initial = true;
+    
+    /* Skip to first BEGIN_NODE token at correct depth */
+    while (p < end) {
+        uint32_t token = fdt32_to_cpu(*p++);
+        
+        switch (token) {
+        case FDT_BEGIN_NODE:
+            if (skip_initial) {
+                /* Skip the parent node itself */
+                skip_initial = false;
+                depth = 0;
+            } else if (depth == 0) {
+                /* Found first subnode */
+                return (uint8_t *)p - (uint8_t *)fdt - fdt32_to_cpu(header->off_dt_struct) - 4;
+            } else {
+                depth++;
+            }
+            /* Skip node name */
+            const char *name = (const char *)p;
+            int len = strlen(name) + 1;
+            p = (uint32_t *)((uint8_t *)p + fdt_align(len));
+            break;
+            
+        case FDT_END_NODE:
+            if (depth == 0) {
+                /* No more subnodes */
+                return -1;
+            }
+            depth--;
+            break;
+            
+        case FDT_PROP:
+            /* Skip property */
+            fdt_prop_t *prop = (fdt_prop_t *)p;
+            uint32_t proplen = fdt32_to_cpu(prop->len);
+            p = (uint32_t *)((uint8_t *)p + sizeof(fdt_prop_t) + fdt_align(proplen));
+            break;
+            
+        case FDT_NOP:
+            /* Skip NOP */
+            break;
+            
+        case FDT_END:
+            /* End of device tree */
+            return -1;
+        }
+    }
+    
+    return -1;
+}
+
+/* Get next sibling node */
+int fdt_next_subnode(const void *fdt, int offset) {
+    fdt_header_t *header = (fdt_header_t *)fdt;
+    uint32_t struct_off = fdt32_to_cpu(header->off_dt_struct);
+    uint32_t struct_size = fdt32_to_cpu(header->size_dt_struct);
+    
+    /* Validate offset is within bounds */
+    if (offset < 0 || offset >= struct_size) {
+        return -1;
+    }
+    
+    uint32_t *p = (uint32_t *)((uint8_t *)fdt + struct_off + offset);
+    uint32_t *end = (uint32_t *)((uint8_t *)fdt + struct_off + struct_size);
+    int depth = 0;
+    
+    /* Skip current node and find next sibling */
+    while (p < end) {
+        uint32_t token = fdt32_to_cpu(*p++);
+        
+        switch (token) {
+        case FDT_BEGIN_NODE:
+            depth++;
+            /* Skip node name */
+            const char *name = (const char *)p;
+            int len = strlen(name) + 1;
+            p = (uint32_t *)((uint8_t *)p + fdt_align(len));
+            break;
+            
+        case FDT_END_NODE:
+            depth--;
+            if (depth == 0) {
+                /* Look for next BEGIN_NODE at same level */
+                while (p < end) {
+                    token = fdt32_to_cpu(*p++);
+                    if (token == FDT_BEGIN_NODE) {
+                        return (uint8_t *)p - (uint8_t *)fdt - fdt32_to_cpu(header->off_dt_struct) - 4;
+                    } else if (token == FDT_END_NODE || token == FDT_END) {
+                        return -1;
+                    }
+                }
+            }
+            break;
+            
+        case FDT_PROP:
+            /* Skip property */
+            fdt_prop_t *prop = (fdt_prop_t *)p;
+            uint32_t proplen = fdt32_to_cpu(prop->len);
+            p = (uint32_t *)((uint8_t *)p + sizeof(fdt_prop_t) + fdt_align(proplen));
+            break;
+            
+        case FDT_NOP:
+            /* Skip NOP */
+            break;
+            
+        case FDT_END:
+            /* End of device tree */
+            return -1;
+        }
+    }
+    
+    return -1;
+}
+
+/* Get node name */
+const char *fdt_get_name(const void *fdt, int nodeoffset, int *len) {
+    fdt_header_t *header = (fdt_header_t *)fdt;
+    uint32_t struct_off = fdt32_to_cpu(header->off_dt_struct);
+    uint32_t struct_size = fdt32_to_cpu(header->size_dt_struct);
+    
+    /* Validate offset is within bounds */
+    if (nodeoffset < 0 || nodeoffset >= struct_size) {
+        return NULL;
+    }
+    
+    uint32_t *p = (uint32_t *)((uint8_t *)fdt + struct_off + nodeoffset);
+    
+    /* Check we won't read past end of structure */
+    if ((uint8_t *)p + sizeof(uint32_t) > (uint8_t *)fdt + struct_off + struct_size) {
+        return NULL;
+    }
+    
+    uint32_t token = fdt32_to_cpu(*p);
+    if (token != FDT_BEGIN_NODE) {
+        return NULL;
+    }
+    
+    const char *name = (const char *)(p + 1);
+    if (len) {
+        *len = strlen(name);
+    }
+    
+    return name;
+}
+
+/* Find subnode by name */
+int fdt_subnode_offset(const void *fdt, int parentoffset, const char *name) {
+    int node;
+    
+    fdt_for_each_subnode(node, fdt, parentoffset) {
+        const char *nodename = fdt_get_name(fdt, node, NULL);
+        if (nodename && fdt_strcmp(nodename, name) == 0) {
+            return node;
+        }
+    }
+    
+    return -1;  /* Not found */
 }

@@ -45,6 +45,9 @@ void pmm_free_pages(uint64_t pa, size_t count);
 // Mark region as reserved
 void pmm_reserve_region(uint64_t base, uint64_t size, const char* name);
 
+// Reserve a single page
+void pmm_reserve_page(uint64_t pa);
+
 // Get memory statistics
 void pmm_get_stats(pmm_stats_t* stats);
 

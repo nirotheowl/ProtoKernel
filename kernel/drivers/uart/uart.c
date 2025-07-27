@@ -8,8 +8,8 @@ static volatile uint32_t *uart_base = NULL;
 #define UART0_FR   (uart_base[0x18/4])
 
 void uart_init(void) {
-    // Start with NULL base until devmap is ready
-    uart_base = NULL;
+    // Use temporary boot.S mapping initially
+    uart_base = (volatile uint32_t *)0xFFFF000009000000UL;
     
     // PL011 UART is already initialized by QEMU
     // In a real implementation, we'd configure baud rate, data bits, etc.
