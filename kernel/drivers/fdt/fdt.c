@@ -180,18 +180,18 @@ void fdt_print_memory_info(const memory_info_t *mem_info) {
         uart_puts("  Region ");
         uart_putc('0' + i);
         uart_puts(": base=");
-        // uart_puthex(mem_info->regions[i].base);
+        uart_puthex(mem_info->regions[i].base);
         uart_puts(" size=");
-        // uart_puthex(mem_info->regions[i].size);
+        uart_puthex(mem_info->regions[i].size);
         uart_puts(" (");
-        // uart_puthex(mem_info->regions[i].size / (1024 * 1024));
+        uart_puthex(mem_info->regions[i].size / (1024 * 1024));
         uart_puts(" MB)\n");
     }
     
     uart_puts("\nTotal memory: ");
-    // uart_puthex(mem_info->total_size);
+    uart_puthex(mem_info->total_size);
     uart_puts(" (");
-    // uart_puthex(mem_info->total_size / (1024 * 1024));
+    uart_puthex(mem_info->total_size / (1024 * 1024));
     uart_puts(" MB)\n");
 }
 

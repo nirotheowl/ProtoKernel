@@ -58,13 +58,10 @@ void devmap_init(void)
     devmap_count = 0;
     devmap_next_va = DEVMAP_VA_START;
 
-    /* Detect current platform */
+    /* Detect current platform (still useful for platform-specific behavior) */
     for (int i = 0; platforms[i] != NULL; i++) {
         if (platforms[i]->detect && platforms[i]->detect()) {
             current_platform = platforms[i];
-            // uart_puts("DEVMAP: Detected platform: ");
-            // uart_puts(current_platform->name);
-            // uart_puts("\n");
             break;
         }
     }
@@ -72,30 +69,20 @@ void devmap_init(void)
     /* Default to QEMU if no platform detected */
     if (!current_platform) {
         current_platform = &qemu_virt_platform;
-        // uart_puts("DEVMAP: No platform detected, defaulting to QEMU virt\n");
     }
 
-    /* Map all devices for current platform */
-    if (current_platform->devmap && current_platform->devmap->entries) {
-        const devmap_entry_t *entry = current_platform->devmap->entries;
-        while (entry->size != 0) {
-            // uart_puts("DEVMAP: Adding ");
-            // uart_puts(entry->name);
-            // uart_puts(" at PA ");
-            // uart_puthex(entry->phys_addr);
-            // uart_puts("\n");
-            
-            if (devmap_add_entry(entry) != 0) {
-                uart_puts("DEVMAP: Failed to add entry: ");
-                uart_puts(entry->name);
-                uart_puts("\n");
-            }
-            entry++;
-        }
+    /* Map all devices discovered from the device tree */
+    /* This is the ONLY place we map devices - no duplication */
+    int mapped = devmap_map_all_devices();
+    if (mapped < 0) {
+        uart_puts("DEVMAP: Failed to map devices from device tree\n");
+    } else {
+        uart_puts("DEVMAP: Mapped ");
+        uart_puthex(mapped);
+        uart_puts(" device resources\n");
     }
 
     devmap_initialized = true;
-    // uart_puts("DEVMAP: Device mapping initialized\n");
 }
 
 /* Allocate virtual address for device mapping */
@@ -336,12 +323,28 @@ int devmap_map_device_resources(struct device *dev) {
             continue;
         }
         
-        /* Map the resource */
-        uint64_t phys_addr = res->start;
-        size_t size = resource_size(res);
-        void *vaddr = devmap_map_device(phys_addr, size, DEVMAP_ATTR_DEVICE);
+        /* Check if this physical address is already mapped */
+        void *existing_va = devmap_device_va(res->start);
+        if (existing_va) {
+            /* Already mapped, just update the resource */
+            resource_set_mapped_addr(res, existing_va);
+            mapped++;
+            continue;
+        }
         
-        if (vaddr) {
+        /* Map the resource with device name */
+        devmap_entry_t entry = {
+            .name = dev->name,  /* Use device name instead of "runtime" */
+            .phys_addr = res->start,
+            .virt_addr = 0,  /* Allocate */
+            .size = resource_size(res),
+            .attributes = DEVMAP_ATTR_DEVICE
+        };
+        
+        if (devmap_add_entry(&entry) == 0) {
+            /* Get the allocated virtual address with proper offset */
+            uint64_t pa_offset = res->start & (PAGE_SIZE - 1);
+            void *vaddr = (void*)(devmap_table[devmap_count - 1].allocated_va + pa_offset);
             resource_set_mapped_addr(res, vaddr);
             mapped++;
         }

@@ -72,7 +72,37 @@ void kernel_main(void* dtb) {
         uart_puts("WARNING: Failed to map FDT to virtual memory\n");
     }
     
+    // Initialize device tree subsystem BEFORE devmap_init
+    // This allows devmap to use discovered devices
+    uart_puts("\nInitializing device management...\n");
+    if (device_tree_init(fdt_mgr_get_blob()) < 0) {
+        uart_puts("ERROR: Failed to initialize device tree subsystem\n");
+    } else {
+        // Enumerate all devices from FDT
+        uart_puts("Enumerating devices from device tree...\n");
+        int device_count = device_tree_populate_devices();
+        if (device_count < 0) {
+            uart_puts("ERROR: Failed to enumerate devices\n");
+        } else {
+            uart_puts("Device enumeration complete. Found ");
+            uart_puthex(device_count);
+            uart_puts(" devices.\n");
+            
+            // Migrate devices to permanent storage now that PMM is available
+            // This frees up the early pool and provides more space for devices
+            if (device_count > 0) {
+                int migrated = device_migrate_to_permanent();
+                if (migrated > 0) {
+                    uart_puts("Migrated ");
+                    uart_puthex(migrated);
+                    uart_puts(" devices to permanent storage\n");
+                }
+            }
+        }
+    }
+    
     // Initialize Device Mapping system
+    // Now devmap_init can use the discovered devices
     // uart_puts("Initializing devmap...\n");
     devmap_init();
     
@@ -134,59 +164,16 @@ void kernel_main(void* dtb) {
     // Print memory statistics
     pmm_print_stats();
     
-    // Initialize device tree subsystem
-    uart_puts("\nInitializing device management...\n");
-    if (device_tree_init(fdt_mgr_get_blob()) < 0) {
-        uart_puts("ERROR: Failed to initialize device tree subsystem\n");
-    } else {
-        // Enumerate all devices from FDT
-        uart_puts("Enumerating devices from device tree...\n");
-        int device_count = device_tree_populate_devices();
-        if (device_count < 0) {
-            uart_puts("ERROR: Failed to enumerate devices\n");
-        } else {
-            uart_puts("\nDevice enumeration complete. Found ");
-            uart_puthex(device_count);
-            uart_puts(" devices.\n");
-            
-            // Print device tree
-            device_tree_dump_devices();
-            
-            // Show detailed info for a few devices
-            uart_puts("\nDetailed device info:\n");
-            struct device *uart_dev = device_find_by_compatible("arm,pl011");
-            if (uart_dev) {
-                uart_puts("\nUART device details:\n");
-                device_print_info(uart_dev);
-            }
-            
-            struct device *gic_dev = device_find_by_type(DEV_TYPE_INTERRUPT);
-            if (gic_dev) {
-                uart_puts("\nGIC device details:\n");
-                device_print_info(gic_dev);
-            }
-            
-            // Print early pool statistics
-            extern void early_pool_print_stats(void);
-            early_pool_print_stats();
-            
-            // Map all discovered devices
-            uart_puts("\n=== Mapping all discovered devices ===\n");
-            int mapped = devmap_map_all_devices();
-            uart_puts("Total resources mapped: ");
-            uart_puthex(mapped);
-            uart_puts("\n");
-            
-            // Print updated device mappings
-            devmap_print_mappings();
-            
-            // Show UART device with mapped addresses
-            uart_puts("\nUART device after mapping:\n");
-            if (uart_dev) {
-                device_print_info(uart_dev);
-            }
-        }
-    }
+    // Print device tree that was enumerated earlier
+    device_tree_dump_devices();
+    
+    // Commented out detailed device info - not needed for normal boot
+    // struct device *uart_dev = device_find_by_compatible("arm,pl011");
+    // struct device *gic_dev = device_find_by_type(DEV_TYPE_INTERRUPT);
+    
+    // Print early pool statistics
+    extern void early_pool_print_stats(void);
+    early_pool_print_stats();
     
     // Run device tests
     extern void run_device_tests(void);

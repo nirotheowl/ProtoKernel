@@ -384,6 +384,16 @@ int device_for_each_child(struct device *parent,
     return 0;
 }
 
+/* Get registry head for migration */
+struct device *device_get_registry_head(void) {
+    return device_registry.devices;
+}
+
+/* Set registry head after migration */
+void device_set_registry_head(struct device *head) {
+    device_registry.devices = head;
+}
+
 /* Get root device */
 struct device *device_get_root(void) {
     // uart_puts("DEVICE: device_get_root called\n");

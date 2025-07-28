@@ -16,8 +16,10 @@ Physical Address Range    | Size      | Description
 -------------------------|-----------|----------------------------------
 0x00000000 - 0x3FFFFFFF  | 1GB       | Reserved/Unmapped
 0x40000000 - 0x40200000  | 2MB       | Reserved for firmware/bootloader
-0x40200000 - 0x40xxxxxx  | ~40KB     | Kernel image (loaded here)
-0x40xxxxxx - 0x50000000  | ~256MB    | Available RAM (managed by PMM)
+0x40200000 - 0x402A7000  | ~668KB    | Kernel image (text/data/bss)
+0x402A7000 - 0x402B2000  | 44KB      | Boot page tables
+0x402B7000 - 0x403B7000  | 1MB       | FDT (preserved)
+0x403B7000 - 0x80000000  | ~1GB      | Available RAM (managed by PMM)
 0x08000000 - 0x08010000  | 64KB      | GIC Distributor (MMIO)
 0x08010000 - 0x08020000  | 64KB      | GIC CPU Interface (MMIO)
 0x09000000 - 0x09001000  | 4KB       | PL011 UART (MMIO)
@@ -150,6 +152,24 @@ Index | Type                | Attributes
 
 4. RUNTIME MEMORY MANAGEMENT
 ============================
+
+4.0 Device Data Management
+--------------------------
+The kernel maintains device information discovered from FDT in two phases:
+
+Early Boot Pool (Before PMM):
+- Location: 0xFFFF000040225000 (kernel BSS + alignment)
+- Size: 512KB static allocation
+- Purpose: Store device structures during FDT enumeration
+- Usage: ~35KB on QEMU, but supports device-rich platforms
+- Contains: Device structures, resources, compatible strings
+
+Permanent Device Storage (After PMM):
+- Location: 0xFFFF000041200000 (dynamically allocated)
+- Size: ~52KB (allocated based on device count)
+- Purpose: Long-term storage for device registry
+- Migration: Happens early in kernel_main after PMM init
+- Contains: All device data copied from early pool
 
 4.1 Physical Memory Manager (PMM)
 ---------------------------------

@@ -243,15 +243,15 @@ void fdt_mgr_print_info(void) {
     uart_puts("\nFDT Manager State:\n");
     uart_puts("==================\n");
     uart_puts("Physical address: ");
-    // uart_puthex((uint64_t)fdt_state.phys_addr);
+    uart_puthex((uint64_t)fdt_state.phys_addr);
     uart_puts("\nVirtual address:  ");
     if (fdt_state.is_mapped) {
-        // uart_puthex((uint64_t)fdt_state.virt_addr);
+        uart_puthex((uint64_t)fdt_state.virt_addr);
     } else {
         uart_puts("(not mapped)");
     }
     uart_puts("\nSize:             ");
-    // uart_puthex(fdt_state.size);
+    uart_puthex(fdt_state.size);
     uart_puts(" bytes\n");
     uart_puts("Is mapped:        ");
     uart_puts(fdt_state.is_mapped ? "yes" : "no");
