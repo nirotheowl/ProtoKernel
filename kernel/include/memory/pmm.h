@@ -8,10 +8,6 @@
 #define PMM_PAGE_SIZE 4096
 #define PMM_PAGE_SHIFT 12
 
-// Maximum memory support (1GB for now)
-#define PMM_MAX_MEMORY (1ULL << 30)  
-#define PMM_MAX_PAGES (PMM_MAX_MEMORY / PMM_PAGE_SIZE)
-
 // Forward declaration - actual definition in memmap.h
 typedef struct mem_region mem_region_t;
 
@@ -25,7 +21,9 @@ typedef struct pmm_stats {
 } pmm_stats_t;
 
 // Initialize the physical memory manager
-void pmm_init(uint64_t kernel_end, uint64_t mem_size);
+// Note: memory_info_t is defined in drivers/fdt.h
+struct memory_info;
+void pmm_init(uint64_t kernel_end, struct memory_info *mem_info);
 
 // Allocate a single page (returns physical address)
 uint64_t pmm_alloc_page(void);

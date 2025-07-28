@@ -9,7 +9,6 @@
 #include <drivers/fdt.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>
-#include <memory/paging.h>
 #include <memory/vmparam.h>
 #include <uart.h>
 #include <string.h>
@@ -123,6 +122,11 @@ bool fdt_mgr_reserve_pages(void) {
 /* Map FDT to permanent virtual address */
 bool fdt_mgr_map_virtual(void) {
     if (!fdt_state.phys_addr || !fdt_state.size) {
+        uart_puts("FDT_MGR: No FDT to map (phys_addr=");
+        uart_puthex((uint64_t)fdt_state.phys_addr);
+        uart_puts(", size=");
+        uart_puthex(fdt_state.size);
+        uart_puts(")\n");
         return false;
     }
     
@@ -135,14 +139,18 @@ bool fdt_mgr_map_virtual(void) {
     uint64_t offset = (uint64_t)fdt_state.phys_addr - phys_start;
     uint64_t map_size = ((fdt_state.size + offset + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
     
-    // uart_puts("FDT_MGR: Mapping FDT to virtual address ");
-    // uart_puthex(FDT_VIRT_BASE);
-    // uart_puts("\n");
+    uart_puts("FDT_MGR: Mapping FDT from PA ");
+    uart_puthex(phys_start);
+    uart_puts(" to VA ");
+    uart_puthex(FDT_VIRT_BASE);
+    uart_puts(" size ");
+    uart_puthex(map_size);
+    uart_puts("\n");
     
     /* Map the FDT pages with read-only permissions */
     uint32_t attrs = VMM_ATTR_READ;
     if (!vmm_map_range(vmm_get_kernel_context(), FDT_VIRT_BASE, phys_start, map_size, attrs)) {
-        // uart_puts("FDT_MGR: Failed to map FDT to virtual memory\n");
+        uart_puts("FDT_MGR: Failed to map FDT to virtual memory\n");
         return false;
     }
     

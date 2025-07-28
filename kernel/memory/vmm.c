@@ -7,7 +7,7 @@
 
 #include <memory/vmm.h>
 #include <memory/pmm.h>
-#include <memory/paging.h>
+/* paging.h constants now in vmm.h */
 #include <memory/vmparam.h>
 #include <uart.h>
 #include <string.h>

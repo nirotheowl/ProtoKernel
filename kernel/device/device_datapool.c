@@ -9,7 +9,6 @@
 #include <device/resource.h>
 #include <memory/pmm.h>
 #include <memory/vmm.h>
-#include <memory/paging.h>
 #include <memory/vmparam.h>
 #include <string.h>
 #include <uart.h>

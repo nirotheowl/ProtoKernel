@@ -1,7 +1,6 @@
 #include <stdint.h>
 #include <exceptions/exceptions.h>
 #include <uart.h>
-#include <memory/mmu.h>
 
 // External assembly function
 extern void install_exception_vectors(void);

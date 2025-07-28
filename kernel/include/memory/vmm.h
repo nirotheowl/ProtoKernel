@@ -11,7 +11,38 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <memory/paging.h>
+
+/* Page sizes and constants from paging.h */
+#define PAGE_SHIFT              12
+#define PAGE_SIZE               (1UL << PAGE_SHIFT)    // 4KB
+#define PAGE_MASK               (~(PAGE_SIZE - 1))
+#define SECTION_SHIFT           21
+#define SECTION_SIZE            (1UL << SECTION_SHIFT) // 2MB
+#define SECTION_MASK            (~(SECTION_SIZE - 1))
+#define PTRS_PER_TABLE          512
+
+/* Page table entry types and attributes */
+#define PTE_VALID               (1UL << 0)
+#define PTE_TABLE               (1UL << 1)
+#define PTE_TYPE_BLOCK          (1UL << 0)  /* Block descriptor */
+#define PTE_TYPE_TABLE          (3UL << 0)  /* Table descriptor */
+#define PTE_TYPE_PAGE           (3UL << 0)  /* Page descriptor */
+#define PTE_ADDR_MASK           0x0000FFFFFFFFF000UL
+#define PTE_ATTRINDX(n)         ((n) << 2)
+#define PTE_NS                  (1UL << 5)
+#define PTE_AP_RW               (0UL << 6)
+#define PTE_AP_RO               (2UL << 6)
+#define PTE_SH_INNER            (3UL << 8)
+#define PTE_SH_OUTER            (2UL << 8)
+#define PTE_AF                  (1UL << 10)
+#define PTE_PXN                 (1UL << 53)
+#define PTE_UXN                 (1UL << 54)
+
+/* Memory type definitions (MAIR indices) */
+#define MT_DEVICE_nGnRnE        0  /* Device, non-gathering, non-reordering, no early ack */
+#define MT_DEVICE_nGnRE         1  /* Device, non-gathering, non-reordering, early ack */
+#define MT_NORMAL_NC            2  /* Normal, non-cacheable */
+#define MT_NORMAL               3  /* Normal, cacheable */
 
 /* Page table levels */
 #define PT_LEVEL_0  0  /* 512GB per entry */

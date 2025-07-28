@@ -1,6 +1,8 @@
 #include <memory/pmm.h>
 #include <memory/vmparam.h>
 #include <memory/vmm.h>
+#include <memory/pmm_bootstrap.h>
+#include <drivers/fdt.h>
 #include <uart.h>
 #include <stdint.h>
 #include <boot_config.h>
@@ -8,14 +10,15 @@
 // External symbols from linker script
 extern char _kernel_end;
 
-// Bitmap to track page allocation (1 bit per page)
-// For 1GB of memory with 4KB pages, needs 32KB for the bitmap
-static uint64_t pmm_bitmap[PMM_MAX_PAGES / 64];  // 64 bits per uint64_t
+// Dynamic bitmap pointer (allocated at runtime)
+static uint64_t *pmm_bitmap = NULL;
+static size_t pmm_bitmap_size = 0;
+static size_t pmm_total_pages = 0;
 
 // Memory statistics
 static pmm_stats_t pmm_stats = {0};
 
-// Start of managed memory (after kernel)
+// Start and end of managed memory
 static uint64_t pmm_start = 0;
 static uint64_t pmm_end = 0;
 
@@ -42,59 +45,161 @@ static uint64_t page_to_addr(uint64_t page) {
 }
 
 // Initialize the physical memory manager
-void pmm_init(uint64_t kernel_end, uint64_t mem_size) {
+void pmm_init(uint64_t kernel_end, struct memory_info *mem_info) {
+    memory_info_t *info = (memory_info_t *)mem_info;
+    if (!info || info->count == 0) {
+        uart_puts("ERROR: No memory information provided to PMM\n");
+        return;
+    }
+    
     // kernel_end is a virtual address, convert to physical
     uint64_t kernel_end_phys = VIRT_TO_PHYS(kernel_end);
     
-    // Align kernel_end to page boundary
-    pmm_start = (kernel_end_phys + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
-    pmm_end = 0x40000000 + mem_size;  // Assuming RAM starts at 0x40000000
+    // For now, we'll use the first memory region
+    // TODO: Handle multiple memory regions
+    uint64_t mem_base = info->regions[0].base;
+    uint64_t mem_size = info->regions[0].size;
     
-    // Calculate total pages
-    pmm_stats.total_pages = (pmm_end - pmm_start) >> PMM_PAGE_SHIFT;
-    pmm_stats.free_pages = pmm_stats.total_pages;
+    // Initialize boot allocator after kernel, boot page tables, AND relocated FDT
+    // Add padding for boot page tables as done in original code
+    uint64_t boot_pt_start = (kernel_end_phys + BOOT_PAGE_TABLE_PADDING) & ~(PMM_PAGE_SIZE - 1);
+    uint64_t boot_pt_end = boot_pt_start + BOOT_PAGE_TABLE_SIZE;
+    
+    // Get actual FDT location and size
+    extern void *fdt_mgr_get_phys_addr(void);
+    extern size_t fdt_mgr_get_size(void);
+    void *fdt_phys = fdt_mgr_get_phys_addr();
+    size_t fdt_size = fdt_mgr_get_size();
+    
+    // Start bootstrap allocator after boot page tables
+    uint64_t pmm_bootstrap_start = boot_pt_end;
+    
+    // If FDT exists and is after our current position, move past it
+    if (fdt_phys && fdt_size) {
+        uint64_t fdt_start = (uint64_t)fdt_phys;
+        uint64_t fdt_end = fdt_start + fdt_size;
+        
+        // Check if FDT overlaps with our planned boot allocator region
+        if (fdt_end > pmm_bootstrap_start && fdt_start < (pmm_bootstrap_start + 64 * 1024)) {
+            // Move boot allocator after FDT with some padding
+            pmm_bootstrap_start = (fdt_end + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
+            uart_puts("PMM: Adjusting boot allocator to avoid FDT at ");
+            uart_puthex(fdt_start);
+            uart_puts("\n");
+        }
+    }
+    
+    // Align to page boundary
+    pmm_bootstrap_start = (pmm_bootstrap_start + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
+    
+    // Calculate exact space needed for PMM bitmap
+    // PMM will manage all memory from mem_base to mem_base + mem_size
+    uint64_t total_pages_to_manage = mem_size >> PMM_PAGE_SHIFT;
+    uint64_t bitmap_size_needed = (total_pages_to_manage + 63) / 64 * sizeof(uint64_t);
+    
+    // Boot allocator needs to be large enough for the bitmap plus some overhead
+    // Add 4KB for alignment and allocation metadata
+    uint64_t pmm_bootstrap_size = bitmap_size_needed + 4096;
+    
+    // Round up to page boundary
+    pmm_bootstrap_size = (pmm_bootstrap_size + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
+    
+    uint64_t pmm_bootstrap_end = pmm_bootstrap_start + pmm_bootstrap_size;
+    
+    uart_puts("PMM: Configuring bootstrap allocator for ");
+    uart_puthex(mem_size / 1024 / 1024);
+    uart_puts(" MB RAM\n");
+    uart_puts("  Bitmap needs: ");
+    uart_puthex(bitmap_size_needed);
+    uart_puts(" bytes (");
+    uart_puthex(bitmap_size_needed / 1024);
+    uart_puts(" KB)\n");
+    uart_puts("  Boot allocator size: ");
+    uart_puthex(pmm_bootstrap_size);
+    uart_puts(" bytes\n");
+    
+    // Safety check: ensure boot allocator doesn't extend too far
+    if (pmm_bootstrap_end > mem_base + (16 * 1024 * 1024)) {
+        uart_puts("ERROR: Boot allocator would extend beyond 16MB from RAM base!\n");
+        uart_puts("  Boot alloc end: ");
+        uart_puthex(pmm_bootstrap_end);
+        uart_puts("\n");
+        return;
+    }
+    
+    pmm_bootstrap_init(pmm_bootstrap_start, pmm_bootstrap_end);
+    
+    // Set up PMM range (manage all memory from base)
+    pmm_start = mem_base;
+    pmm_end = mem_base + mem_size;
+    
+    // Calculate total pages and bitmap size
+    pmm_total_pages = (pmm_end - pmm_start) >> PMM_PAGE_SHIFT;
+    pmm_bitmap_size = (pmm_total_pages + 63) / 64 * sizeof(uint64_t); // Round up
+    
+    uart_puts("\nPMM: Initializing with dynamic allocation\n");
+    uart_puts("  Memory range: ");
+    uart_puthex(mem_base);
+    uart_puts(" - ");
+    uart_puthex(mem_base + mem_size);
+    uart_puts(" (");
+    uart_puthex(mem_size / 1024 / 1024);
+    uart_puts(" MB)\n");
+    uart_puts("  Total pages: ");
+    uart_puthex(pmm_total_pages);
+    uart_puts("\n  Bitmap size: ");
+    uart_puthex(pmm_bitmap_size);
+    uart_puts(" bytes\n");
+    
+    // Allocate bitmap using boot allocator
+    pmm_bitmap = (uint64_t*)pmm_bootstrap_alloc(pmm_bitmap_size, 8);
+    if (!pmm_bitmap) {
+        uart_puts("ERROR: Failed to allocate PMM bitmap\n");
+        return;
+    }
+    
+    uart_puts("  Bitmap allocated at: ");
+    uart_puthex((uint64_t)pmm_bitmap);
+    uart_puts("\n");
+    
+    // Initialize statistics
+    pmm_stats.total_pages = pmm_total_pages;
+    pmm_stats.free_pages = pmm_total_pages;
     
     // Clear bitmap (all pages initially free)
-    for (size_t i = 0; i < PMM_MAX_PAGES / 64; i++) {
+    for (size_t i = 0; i < pmm_bitmap_size / sizeof(uint64_t); i++) {
         pmm_bitmap[i] = 0;
     }
     
-    // Reserve kernel memory (0x40000000 to kernel_end_phys)
-    pmm_reserve_region(0x40000000, kernel_end_phys - 0x40000000, "Kernel");
+    // Reserve kernel memory (mem_base to kernel_end_phys)
+    pmm_reserve_region(mem_base, kernel_end_phys - mem_base, "Kernel");
     
-    // Reserve boot page tables (allocated by boot.S after kernel_end)
-    // boot.S: add x26, x26, #BOOT_PAGE_TABLE_PADDING then align to page
-    uint64_t boot_pt_start = (kernel_end_phys + BOOT_PAGE_TABLE_PADDING) & ~(PMM_PAGE_SIZE - 1);
+    // Reserve boot page tables
     pmm_reserve_region(boot_pt_start, BOOT_PAGE_TABLE_SIZE, "Boot Page Tables");
     
-    // Reserve the PMM bitmap itself
-    uint64_t bitmap_size = sizeof(pmm_bitmap);
-    uint64_t bitmap_vaddr = (uint64_t)pmm_bitmap;
-    uint64_t bitmap_paddr = VIRT_TO_PHYS(bitmap_vaddr);
-    pmm_reserve_region(bitmap_paddr, bitmap_size, "PMM Bitmap");
+    // Reserve bootstrap allocator region (includes PMM bitmap)
+    pmm_reserve_region(pmm_bootstrap_start, pmm_bootstrap_used(), "PMM Bootstrap");
+    
+    // Reserve FDT region if it exists
+    if (fdt_phys && fdt_size) {
+        pmm_reserve_region((uint64_t)fdt_phys, fdt_size, "FDT");
+    }
     
     // Reserve UART region
     pmm_reserve_region(0x09000000, 0x1000, "PL011 UART");
     
-    // Print initialization status (disabled until UART is available)
-    // uart_puts("\nPhysical Memory Manager initialized:\n");
-    // uart_puts("  Start: ");
-    // uart_puthex(pmm_start);
-    // uart_puts("\n  End: ");
-    // uart_puthex(pmm_end);
-    // uart_puts("\n  Total pages: ");
-    // uart_puthex(pmm_stats.total_pages);
-    // uart_puts("\n  Free pages: ");
-    // uart_puthex(pmm_stats.free_pages);
-    // uart_puts("\n  Page size: ");
-    // uart_puthex(PMM_PAGE_SIZE);
-    // uart_puts("\n");
+    uart_puts("PMM: Initialization complete\n");
+    uart_puts("  Free pages: ");
+    uart_puthex(pmm_stats.free_pages);
+    uart_puts(" (");
+    uart_puthex(pmm_stats.free_pages * PMM_PAGE_SIZE / 1024 / 1024);
+    uart_puts(" MB)\n");
 }
 
 // Allocate a single page
 uint64_t pmm_alloc_page(void) {
     // Find first free page
-    for (uint64_t i = 0; i < pmm_stats.total_pages; i++) {
+    for (uint64_t i = 0; i < pmm_total_pages; i++) {
         if (!pmm_test_bit(i)) {
             pmm_set_bit(i);
             pmm_stats.free_pages--;
@@ -106,23 +211,15 @@ uint64_t pmm_alloc_page(void) {
             uint64_t va;
             if (vmm_is_dmap_ready()) {
                 va = PHYS_TO_DMAP(pa);
-                // uart_puts("  PMM: Using DMAP to clear page at PA ");
             } else {
                 // Use identity mapping (physical address directly)
                 va = pa;
-                // uart_puts("  PMM: Using identity mapping to clear page at PA ");
             }
-            // uart_puthex(pa);
-            // uart_puts(" VA ");
-            // uart_puthex(va);
-            // uart_puts("\n");
             
             uint64_t* page_ptr = (uint64_t*)va;
-            // uart_puts("  PMM: About to clear page...\n");
             for (size_t j = 0; j < PMM_PAGE_SIZE / sizeof(uint64_t); j++) {
                 page_ptr[j] = 0;
             }
-            // uart_puts("  PMM: Page cleared successfully\n");
             
             return pa;
         }
@@ -149,7 +246,7 @@ uint64_t pmm_alloc_pages(size_t count) {
     uint64_t start = 0;
     uint64_t found = 0;
     
-    for (uint64_t i = 0; i < pmm_stats.total_pages; i++) {
+    for (uint64_t i = 0; i < pmm_total_pages; i++) {
         if (!pmm_test_bit(i)) {
             if (found == 0) start = i;
             found++;
@@ -164,12 +261,11 @@ uint64_t pmm_alloc_pages(size_t count) {
                 
                 uint64_t pa = page_to_addr(start);
                 
-                // Clear the pages - use DMAP if available, otherwise use identity mapping
+                // Clear the pages
                 uint64_t va;
                 if (vmm_is_dmap_ready()) {
                     va = PHYS_TO_DMAP(pa);
                 } else {
-                    // Use identity mapping (physical address directly)
                     va = pa;
                 }
                 uint64_t* page_ptr = (uint64_t*)va;
@@ -230,7 +326,7 @@ void pmm_reserve_region(uint64_t base, uint64_t size, const char* name) {
     uint64_t start_page = addr_to_page(start);
     uint64_t end_page = addr_to_page(end + PMM_PAGE_SIZE - 1);
     
-    for (uint64_t i = start_page; i < end_page; i++) {
+    for (uint64_t i = start_page; i < end_page && i < pmm_total_pages; i++) {
         if (!pmm_test_bit(i)) {
             pmm_set_bit(i);
             pmm_stats.free_pages--;
@@ -250,7 +346,7 @@ void pmm_reserve_page(uint64_t pa) {
     pa = pa & ~(PMM_PAGE_SIZE - 1);
     
     uint64_t page = addr_to_page(pa);
-    if (!pmm_test_bit(page)) {
+    if (page < pmm_total_pages && !pmm_test_bit(page)) {
         pmm_set_bit(page);
         pmm_stats.free_pages--;
         pmm_stats.reserved_pages++;
@@ -264,7 +360,6 @@ void pmm_get_stats(pmm_stats_t* stats) {
     }
 }
 
-
 // Check if address is available
 int pmm_is_available(uint64_t pa) {
     if (pa < pmm_start || pa >= pmm_end) {
@@ -272,7 +367,7 @@ int pmm_is_available(uint64_t pa) {
     }
     
     uint64_t page = addr_to_page(pa);
-    return !pmm_test_bit(page);
+    return page < pmm_total_pages && !pmm_test_bit(page);
 }
 
 // Get end of managed physical memory
@@ -309,6 +404,13 @@ void pmm_print_stats(void) {
     uart_puthex(pmm_stats.allocated_pages * PMM_PAGE_SIZE / 1024 / 1024);
     uart_puts(" MB)\n");
     
+    uart_puts("\nBitmap Info:\n");
+    uart_puts("Address: ");
+    uart_puthex((uint64_t)pmm_bitmap);
+    uart_puts("\nSize: ");
+    uart_puthex(pmm_bitmap_size);
+    uart_puts(" bytes\n");
+    
     uart_puts("\nReserved Regions:\n");
     uart_puts("-----------------\n");
     
@@ -325,6 +427,15 @@ void pmm_print_stats(void) {
     uart_puts(" - ");
     uart_puthex(boot_pt_start + BOOT_PAGE_TABLE_SIZE);
     uart_puts("\n");
+    
+    // Show bootstrap allocator region
+    uart_puts("PMM Bootstrap:    ");
+    uart_puthex(boot_pt_start + BOOT_PAGE_TABLE_SIZE);
+    uart_puts(" - ");
+    uart_puthex((uint64_t)pmm_bootstrap_current());
+    uart_puts(" (");
+    uart_puthex(pmm_bootstrap_used());
+    uart_puts(" bytes used)\n");
     
     // Show FDT reservation if available
     extern void *fdt_mgr_get_phys_addr(void);

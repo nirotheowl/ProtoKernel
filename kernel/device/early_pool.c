@@ -8,7 +8,7 @@
 #include <device/device.h>
 #include <device/resource.h>
 #include <device/device_tree.h>
-#include <memory/paging.h>
+#include <memory/vmm.h>
 #include <string.h>
 #include <uart.h>
 

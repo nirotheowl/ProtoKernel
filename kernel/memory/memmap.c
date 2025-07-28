@@ -1,5 +1,5 @@
 #include <memory/memmap.h>
-#include <memory/paging.h>
+#include <memory/vmm.h>
 #include <uart.h>
 #include <stddef.h>
 
@@ -166,7 +166,7 @@ uint64_t memmap_get_page_attrs(uint64_t addr) {
     mem_region_t* region = memmap_find_region(addr);
     if (!region) {
         // Default to normal cached memory
-        return PTE_KERNEL_BLOCK;
+        return PTE_AF | PTE_VALID | (MT_NORMAL << 2) | PTE_SH_INNER;
     }
     
     uint64_t attrs = PTE_AF | PTE_VALID;

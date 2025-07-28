@@ -2,8 +2,6 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <uart.h>
-#include <memory/mmu.h>
-#include <memory/paging.h>
 #include <memory/pmm.h>
 #include <memory/memmap.h>
 #include <exceptions/exceptions.h>
@@ -51,7 +49,7 @@ void kernel_main(void* dtb) {
     
     // Initialize PMM
     // uart_puts("Initializing PMM...\n");
-    pmm_init((uint64_t)&_kernel_end, mem_info.regions[0].size);
+    pmm_init((uint64_t)&_kernel_end, (struct memory_info *)&mem_info);
     
     // Reserve FDT pages in PMM before any allocations
     if (!fdt_mgr_reserve_pages()) {
@@ -74,28 +72,28 @@ void kernel_main(void* dtb) {
     
     // Initialize device tree subsystem BEFORE devmap_init
     // This allows devmap to use discovered devices
-    uart_puts("\nInitializing device management...\n");
+    // uart_puts("\nInitializing device management...\n");
     if (device_tree_init(fdt_mgr_get_blob()) < 0) {
         uart_puts("ERROR: Failed to initialize device tree subsystem\n");
     } else {
         // Enumerate all devices from FDT
-        uart_puts("Enumerating devices from device tree...\n");
+        // uart_puts("Enumerating devices from device tree...\n");
         int device_count = device_tree_populate_devices();
         if (device_count < 0) {
             uart_puts("ERROR: Failed to enumerate devices\n");
         } else {
-            uart_puts("Device enumeration complete. Found ");
-            uart_puthex(device_count);
-            uart_puts(" devices.\n");
+            // uart_puts("Device enumeration complete. Found ");
+            // uart_puthex(device_count);
+            // uart_puts(" devices.\n");
             
             // Migrate devices to permanent storage now that PMM is available
             // This frees up the early pool and provides more space for devices
             if (device_count > 0) {
                 int migrated = device_migrate_to_permanent();
                 if (migrated > 0) {
-                    uart_puts("Migrated ");
-                    uart_puthex(migrated);
-                    uart_puts(" devices to permanent storage\n");
+                    // uart_puts("Migrated ");
+                    // uart_puthex(migrated);
+                    // uart_puts(" devices to permanent storage\n");
                 }
             }
         }
@@ -162,22 +160,22 @@ void kernel_main(void* dtb) {
     devmap_print_mappings();
     
     // Print memory statistics
-    pmm_print_stats();
+    // pmm_print_stats();
     
     // Print device tree that was enumerated earlier
-    device_tree_dump_devices();
+    // device_tree_dump_devices();
     
     // Commented out detailed device info - not needed for normal boot
     // struct device *uart_dev = device_find_by_compatible("arm,pl011");
     // struct device *gic_dev = device_find_by_type(DEV_TYPE_INTERRUPT);
     
     // Print early pool statistics
-    extern void early_pool_print_stats(void);
-    early_pool_print_stats();
+    // extern void early_pool_print_stats(void);
+    // early_pool_print_stats();
     
     // Run device tests
-    extern void run_device_tests(void);
-    run_device_tests();
+    // extern void run_device_tests(void);
+    // run_device_tests();
     
     // Run FDT manager tests
     // run_fdt_mgr_tests();
