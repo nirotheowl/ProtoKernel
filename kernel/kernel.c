@@ -16,6 +16,9 @@
 #include <drivers/fdt_mgr.h>
 #include <memory/vmm.h>
 #include <platform/devmap.h>
+#include <device/device.h>
+#include <device/resource.h>
+#include <device/device_tree.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -131,10 +134,68 @@ void kernel_main(void* dtb) {
     // Print memory statistics
     pmm_print_stats();
     
+    // Initialize device tree subsystem
+    uart_puts("\nInitializing device management...\n");
+    if (device_tree_init(fdt_mgr_get_blob()) < 0) {
+        uart_puts("ERROR: Failed to initialize device tree subsystem\n");
+    } else {
+        // Enumerate all devices from FDT
+        uart_puts("Enumerating devices from device tree...\n");
+        int device_count = device_tree_populate_devices();
+        if (device_count < 0) {
+            uart_puts("ERROR: Failed to enumerate devices\n");
+        } else {
+            uart_puts("\nDevice enumeration complete. Found ");
+            uart_puthex(device_count);
+            uart_puts(" devices.\n");
+            
+            // Print device tree
+            device_tree_dump_devices();
+            
+            // Show detailed info for a few devices
+            uart_puts("\nDetailed device info:\n");
+            struct device *uart_dev = device_find_by_compatible("arm,pl011");
+            if (uart_dev) {
+                uart_puts("\nUART device details:\n");
+                device_print_info(uart_dev);
+            }
+            
+            struct device *gic_dev = device_find_by_type(DEV_TYPE_INTERRUPT);
+            if (gic_dev) {
+                uart_puts("\nGIC device details:\n");
+                device_print_info(gic_dev);
+            }
+            
+            // Print early pool statistics
+            extern void early_pool_print_stats(void);
+            early_pool_print_stats();
+            
+            // Map all discovered devices
+            uart_puts("\n=== Mapping all discovered devices ===\n");
+            int mapped = devmap_map_all_devices();
+            uart_puts("Total resources mapped: ");
+            uart_puthex(mapped);
+            uart_puts("\n");
+            
+            // Print updated device mappings
+            devmap_print_mappings();
+            
+            // Show UART device with mapped addresses
+            uart_puts("\nUART device after mapping:\n");
+            if (uart_dev) {
+                device_print_info(uart_dev);
+            }
+        }
+    }
+    
+    // Run device tests
+    extern void run_device_tests(void);
+    run_device_tests();
+    
     // Run FDT manager tests
     // run_fdt_mgr_tests();
     
-    // FDT tests have been verified to work correctly
+    // FDT tests work correctly
     // run_fdt_tests();
     
     // TODO: Update these tests for higher-half kernel

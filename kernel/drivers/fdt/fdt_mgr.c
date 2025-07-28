@@ -32,33 +32,33 @@ bool fdt_mgr_init(void *dtb_phys) {
     uint32_t totalsize;
     
     if (!dtb_phys) {
-        uart_puts("FDT_MGR: No DTB provided\n");
+        // uart_puts("FDT_MGR: No DTB provided\n");
         return false;
     }
     
     /* Save physical address */
     fdt_state.phys_addr = dtb_phys;
     
-    uart_puts("FDT_MGR: DTB physical address: ");
-    uart_puthex((uint64_t)dtb_phys);
-    uart_puts("\n");
+    // uart_puts("FDT_MGR: DTB physical address: ");
+    // uart_puthex((uint64_t)dtb_phys);
+    // uart_puts("\n");
     
     /* Map temporarily to read header (using identity mapping) */
     header = (fdt_header_t *)dtb_phys;
     
-    uart_puts("FDT_MGR: Reading magic at ");
-    uart_puthex((uint64_t)&header->magic);
-    uart_puts(": ");
-    uart_puthex(header->magic);
-    uart_puts(" (expected ");
-    uart_puthex(FDT_MAGIC);
-    uart_puts(")\n");
+    // uart_puts("FDT_MGR: Reading magic at ");
+    // uart_puthex((uint64_t)&header->magic);
+    // uart_puts(": ");
+    // uart_puthex(header->magic);
+    // uart_puts(" (expected ");
+    // uart_puthex(FDT_MAGIC);
+    // uart_puts(")\n");
     
     /* Validate magic number */
     if (fdt32_to_cpu(header->magic) != FDT_MAGIC) {
-        uart_puts("FDT_MGR: Invalid FDT magic after byte swap: ");
-        uart_puthex(fdt32_to_cpu(header->magic));
-        uart_puts("\n");
+        // uart_puts("FDT_MGR: Invalid FDT magic after byte swap: ");
+        // uart_puthex(fdt32_to_cpu(header->magic));
+        // uart_puts("\n");
         return false;
     }
     
@@ -66,11 +66,11 @@ bool fdt_mgr_init(void *dtb_phys) {
     totalsize = fdt32_to_cpu(header->totalsize);
     
     if (totalsize > FDT_MAX_SIZE) {
-        uart_puts("FDT_MGR: WARNING: FDT size (");
-        uart_puthex(totalsize);
-        uart_puts(" bytes) exceeds max (");
-        uart_puthex(FDT_MAX_SIZE);
-        uart_puts(" bytes)\n");
+        // uart_puts("FDT_MGR: WARNING: FDT size (");
+        // uart_puthex(totalsize);
+        // uart_puts(" bytes) exceeds max (");
+        // uart_puthex(FDT_MAX_SIZE);
+        // uart_puts(" bytes)\n");
         // For now, continue anyway as QEMU generates large DTBs
     }
     
@@ -81,16 +81,16 @@ bool fdt_mgr_init(void *dtb_phys) {
     uint64_t dtb_addr = (uint64_t)dtb_phys;
     if (dtb_addr >= kernel_end && dtb_addr < (kernel_end + 0x20000)) {
         fdt_state.is_relocated = true;
-        uart_puts("FDT_MGR: Using relocated DTB at ");
-        uart_puthex(dtb_addr);
-        uart_puts("\n");
+        // uart_puts("FDT_MGR: Using relocated DTB at ");
+        // uart_puthex(dtb_addr);
+        // uart_puts("\n");
     }
     
-    uart_puts("FDT_MGR: Initialized with DTB at ");
-    uart_puthex((uint64_t)dtb_phys);
-    uart_puts(", size ");
-    uart_puthex(totalsize);
-    uart_puts(" bytes\n");
+    // uart_puts("FDT_MGR: Initialized with DTB at ");
+    // uart_puthex((uint64_t)dtb_phys);
+    // uart_puts(", size ");
+    // uart_puthex(totalsize);
+    // uart_puts(" bytes\n");
     
     return true;
 }
@@ -106,11 +106,11 @@ bool fdt_mgr_reserve_pages(void) {
     uint64_t end_page = ((uint64_t)fdt_state.phys_addr + fdt_state.size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
     uint64_t num_pages = (end_page - start_page) / PAGE_SIZE;
     
-    uart_puts("FDT_MGR: Reserving ");
-    uart_puthex(num_pages);
-    uart_puts(" pages at ");
-    uart_puthex(start_page);
-    uart_puts("\n");
+    // uart_puts("FDT_MGR: Reserving ");
+    // uart_puthex(num_pages);
+    // uart_puts(" pages at ");
+    // uart_puthex(start_page);
+    // uart_puts("\n");
     
     /* Mark pages as reserved in PMM */
     for (uint64_t i = 0; i < num_pages; i++) {
@@ -135,14 +135,14 @@ bool fdt_mgr_map_virtual(void) {
     uint64_t offset = (uint64_t)fdt_state.phys_addr - phys_start;
     uint64_t map_size = ((fdt_state.size + offset + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
     
-    uart_puts("FDT_MGR: Mapping FDT to virtual address ");
-    uart_puthex(FDT_VIRT_BASE);
-    uart_puts("\n");
+    // uart_puts("FDT_MGR: Mapping FDT to virtual address ");
+    // uart_puthex(FDT_VIRT_BASE);
+    // uart_puts("\n");
     
     /* Map the FDT pages with read-only permissions */
     uint32_t attrs = VMM_ATTR_READ;
     if (!vmm_map_range(vmm_get_kernel_context(), FDT_VIRT_BASE, phys_start, map_size, attrs)) {
-        uart_puts("FDT_MGR: Failed to map FDT to virtual memory\n");
+        // uart_puts("FDT_MGR: Failed to map FDT to virtual memory\n");
         return false;
     }
     
@@ -153,12 +153,12 @@ bool fdt_mgr_map_virtual(void) {
     /* Validate the mapping by checking magic number */
     fdt_header_t *header = (fdt_header_t *)fdt_state.virt_addr;
     if (fdt32_to_cpu(header->magic) != FDT_MAGIC) {
-        uart_puts("FDT_MGR: FDT validation failed after mapping\n");
+        // uart_puts("FDT_MGR: FDT validation failed after mapping\n");
         fdt_state.is_mapped = false;
         return false;
     }
     
-    uart_puts("FDT_MGR: Successfully mapped FDT\n");
+    // uart_puts("FDT_MGR: Successfully mapped FDT\n");
     return true;
 }
 
@@ -212,14 +212,14 @@ bool fdt_mgr_verify_integrity(void) {
     /* Check magic number */
     fdt_header_t *header = (fdt_header_t *)fdt;
     if (fdt32_to_cpu(header->magic) != FDT_MAGIC) {
-        uart_puts("FDT_MGR: Integrity check failed - invalid magic\n");
+        // uart_puts("FDT_MGR: Integrity check failed - invalid magic\n");
         return false;
     }
     
     /* Verify size matches */
     uint32_t totalsize = fdt32_to_cpu(header->totalsize);
     if (totalsize != fdt_state.size) {
-        uart_puts("FDT_MGR: Integrity check failed - size mismatch\n");
+        // uart_puts("FDT_MGR: Integrity check failed - size mismatch\n");
         return false;
     }
     
@@ -231,7 +231,7 @@ bool fdt_mgr_verify_integrity(void) {
     
     if (struct_off + struct_size > totalsize || 
         strings_off + strings_size > totalsize) {
-        uart_puts("FDT_MGR: Integrity check failed - invalid offsets\n");
+        // uart_puts("FDT_MGR: Integrity check failed - invalid offsets\n");
         return false;
     }
     
@@ -243,15 +243,15 @@ void fdt_mgr_print_info(void) {
     uart_puts("\nFDT Manager State:\n");
     uart_puts("==================\n");
     uart_puts("Physical address: ");
-    uart_puthex((uint64_t)fdt_state.phys_addr);
+    // uart_puthex((uint64_t)fdt_state.phys_addr);
     uart_puts("\nVirtual address:  ");
     if (fdt_state.is_mapped) {
-        uart_puthex((uint64_t)fdt_state.virt_addr);
+        // uart_puthex((uint64_t)fdt_state.virt_addr);
     } else {
         uart_puts("(not mapped)");
     }
     uart_puts("\nSize:             ");
-    uart_puthex(fdt_state.size);
+    // uart_puthex(fdt_state.size);
     uart_puts(" bytes\n");
     uart_puts("Is mapped:        ");
     uart_puts(fdt_state.is_mapped ? "yes" : "no");

@@ -1,6 +1,8 @@
 #include <uart.h>
 #include <stddef.h>
 #include <platform/devmap.h>
+#include <device/device.h>
+#include <device/resource.h>
 
 static volatile uint32_t *uart_base = NULL;
 
@@ -16,7 +18,31 @@ void uart_init(void) {
 }
 
 void uart_update_base(void) {
-    // Called after devmap is initialized to set UART base
+    const platform_desc_t *platform = platform_get_current();
+    
+    // Try platform-specific console UART first
+    if (platform && platform->console_uart_phys) {
+        // Try to find by compatible string if provided
+        if (platform->console_uart_compatible) {
+            struct device *uart_dev = device_find_by_compatible(platform->console_uart_compatible);
+            if (uart_dev) {
+                struct resource *res = device_get_resource(uart_dev, RES_TYPE_MEM, 0);
+                if (res && res->mapped_addr) {
+                    uart_base = (volatile uint32_t *)res->mapped_addr;
+                    return;
+                }
+            }
+        }
+        
+        // Try direct physical address lookup
+        void *va = devmap_device_va(platform->console_uart_phys);
+        if (va) {
+            uart_base = (volatile uint32_t *)va;
+            return;
+        }
+    }
+    
+    // Fallback to hardcoded address for QEMU
     uart_base = (volatile uint32_t *)devmap_device_va(0x09000000);
 }
 

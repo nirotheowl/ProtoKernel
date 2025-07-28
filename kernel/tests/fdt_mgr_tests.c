@@ -212,13 +212,14 @@ static bool test_fdt_memory_parsing(void) {
 static int test_device_callback(const char *path, const char *name, void *ctx) {
     int *count = (int *)ctx;
     
-    if (*count < 10) {  // Only print first 10 devices
-        uart_puts("    Device: ");
-        uart_puts(path);
-        uart_puts(" name=");
-        uart_puts(name);
-        uart_puts("\n");
-    }
+    // Print all devices (no limit)
+    uart_puts("    Device ");
+    uart_puthex(*count);
+    uart_puts(": ");
+    uart_puts(path);
+    uart_puts(" name=");
+    uart_puts(name);
+    uart_puts("\n");
     
     (*count)++;
     return 0;  // Continue enumeration
@@ -303,7 +304,7 @@ static bool test_fdt_device_enumeration(void) {
     }
     
     // Now try limited enumeration
-    uart_puts("\n  Testing limited device enumeration...\n");
+    uart_puts("\n  Testing device enumeration (first level children)...\n");
     void *fdt = fdt_mgr_get_blob();
     if (!fdt) {
         return false;
@@ -314,16 +315,17 @@ static bool test_fdt_device_enumeration(void) {
     fdt_for_each_subnode(child, fdt, 0) {
         const char *name = fdt_get_name(fdt, child, NULL);
         if (name) {
-            uart_puts("    Child node: '");
+            uart_puts("    Child node ");
+            uart_puthex(node_count);
+            uart_puts(": '");
             uart_puts(name);
             uart_puts("'\n");
             node_count++;
-            if (node_count >= 5) {
-                uart_puts("    (limiting to first 5 nodes)\n");
-                break;
-            }
         }
     }
+    uart_puts("    Total first-level children: ");
+    uart_puthex(node_count);
+    uart_puts("\n");
     
     if (node_count == 0) {
         uart_puts("  FAIL: No child nodes found\n");

@@ -34,4 +34,48 @@ static inline char* strncpy(char* dest, const char* src, size_t n) {
     return dest;
 }
 
+static inline int strcmp(const char* s1, const char* s2) {
+    while (*s1 && *s2 && *s1 == *s2) {
+        s1++;
+        s2++;
+    }
+    return *(unsigned char*)s1 - *(unsigned char*)s2;
+}
+
+static inline int strncmp(const char* s1, const char* s2, size_t n) {
+    while (n && *s1 && *s2 && *s1 == *s2) {
+        s1++;
+        s2++;
+        n--;
+    }
+    if (n == 0) {
+        return 0;
+    }
+    return *(unsigned char*)s1 - *(unsigned char*)s2;
+}
+
+static inline void* memcpy(void* dest, const void* src, size_t n) {
+    unsigned char* d = dest;
+    const unsigned char* s = src;
+    while (n--) {
+        *d++ = *s++;
+    }
+    return dest;
+}
+
+static inline char* strstr(const char* haystack, const char* needle) {
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0) {
+        return (char*)haystack;
+    }
+    
+    while (*haystack) {
+        if (strncmp(haystack, needle, needle_len) == 0) {
+            return (char*)haystack;
+        }
+        haystack++;
+    }
+    return NULL;
+}
+
 #endif

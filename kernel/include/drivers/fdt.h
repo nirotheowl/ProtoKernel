@@ -69,4 +69,11 @@ int fdt_next_subnode(const void *fdt, int offset);
 const char *fdt_get_name(const void *fdt, int nodeoffset, int *len);
 int fdt_subnode_offset(const void *fdt, int parentoffset, const char *name);
 
+/* Additional FDT functions needed for device tree */
+int fdt_check_header(const void *fdt);
+const void *fdt_getprop(const void *fdt, int nodeoffset, const char *name, int *lenp);
+int fdt_parent_offset(const void *fdt, int nodeoffset);
+int fdt_next_node(const void *fdt, int offset, int *depth);
+int fdt_path_offset(const void *fdt, const char *path);
+
 #endif /* _FDT_H_ */
