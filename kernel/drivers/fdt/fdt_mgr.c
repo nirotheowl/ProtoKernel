@@ -75,16 +75,6 @@ bool fdt_mgr_init(void *dtb_phys) {
     
     fdt_state.size = totalsize;
     
-    /* Check if DTB was relocated by boot.S */
-    uint64_t kernel_end = (uint64_t)&_kernel_end;
-    uint64_t dtb_addr = (uint64_t)dtb_phys;
-    if (dtb_addr >= kernel_end && dtb_addr < (kernel_end + 0x20000)) {
-        fdt_state.is_relocated = true;
-        // uart_puts("FDT_MGR: Using relocated DTB at ");
-        // uart_puthex(dtb_addr);
-        // uart_puts("\n");
-    }
-    
     // uart_puts("FDT_MGR: Initialized with DTB at ");
     // uart_puthex((uint64_t)dtb_phys);
     // uart_puts(", size ");
@@ -263,8 +253,6 @@ void fdt_mgr_print_info(void) {
     uart_puts(" bytes\n");
     uart_puts("Is mapped:        ");
     uart_puts(fdt_state.is_mapped ? "yes" : "no");
-    uart_puts("\nIs relocated:     ");
-    uart_puts(fdt_state.is_relocated ? "yes" : "no");
     uart_puts("\n");
     
     /* Add integrity check */

@@ -79,11 +79,6 @@ void kernel_main(void* dtb) {
     // uart_puts("Initializing devmap...\n");
     devmap_init();
     
-    // Initialize Device Mapping system
-    // Now devmap_init can use the discovered devices
-    // uart_puts("Initializing devmap...\n");
-    devmap_init();
-    
     // Now initialize and update UART with proper mapping
     uart_init();
     uart_update_base();

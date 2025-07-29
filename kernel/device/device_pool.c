@@ -2,8 +2,7 @@
  * kernel/device/device_pool.c
  * 
  * Device memory pool management
- * Provides memory allocation for device structures with automatic
- * transition from BSS-based bootstrap to PMM-based allocation
+ * Provides memory allocation for device structures using PMM-based allocation
  */
 
 #include <device/device.h>
