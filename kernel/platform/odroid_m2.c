@@ -7,6 +7,8 @@
 #include <platform/devmap.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <device/device.h>
+#include <device/resource.h>
 
 /* ODroid-M2 / Rockchip RK3588S device memory map - MINIMAL for early boot only */
 static const devmap_entry_t odroid_m2_devmap[] = {
@@ -30,9 +32,18 @@ static const platform_devmap_t odroid_m2_platform_devmap = {
 /* Platform detection for ODroid-M2 */
 static int odroid_m2_detect(void)
 {
-    /* TODO: Implement actual detection logic */
-    /* Check DTB compatible string for "rockchip,rk3588s" or "hardkernel,odroid-m2" */
-    /* This is a placeholder */
+    /* Check if this is ODroid-M2 platform by looking for specific devices
+     * or compatible strings in the device tree */
+    
+    // Check for Rockchip UART at the expected address
+    struct device *uart = device_find_by_compatible("rockchip,rk3588-uart");
+    if (uart) {
+        struct resource *res = device_get_resource(uart, RES_TYPE_MEM, 0);
+        if (res && res->start == 0xFEB50000) {
+            return 1;  // This is likely ODroid-M2
+        }
+    }
+    
     return 0;
 }
 

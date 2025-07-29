@@ -351,16 +351,18 @@ el1_entry:
     subs x3, x3, #1                       /* Decrement counter */
     b.ne 3b
 
-    /* Step 4: Temporary UART mapping for debugging
+    /* Step 4: Temporary UART mapping for debugging - COMMENTED OUT
      * Map UART at physical 0x09000000 to virtual 0xFFFF000009000000
-     * This will be replaced by devmap but needed for early debug */
-    mov x0, #0x09000000                   /* UART physical address */
-    mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_DEVICE | ATTR_AP_RW_EL1
-    orr x1, x1, #ATTR_UXN | ATTR_PXN     /* No execute for device memory */
-    orr x1, x1, #BLOCK_DESC               /* Block descriptor */
-    orr x4, x0, x1                        /* Combine address and attributes */
-    mov x2, x16                           /* Device L2 table base */
-    str x4, [x2, #(72 * 8)]               /* Store at L2[72] */
+     * This is now handled by devmap system after proper initialization
+     * 
+     * mov x0, #0x09000000
+     * mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_DEVICE | ATTR_AP_RW_EL1
+     * orr x1, x1, #ATTR_UXN | ATTR_PXN
+     * orr x1, x1, #BLOCK_DESC
+     * orr x4, x0, x1
+     * mov x2, x16
+     * str x4, [x2, #(72 * 8)]
+     */
 
     /* Configure MAIR_EL1 (Memory Attribute Indirection Register)
      * MAIR_EL1 defines memory types for use in page table entries:

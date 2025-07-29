@@ -66,9 +66,13 @@ void devmap_init(void)
         }
     }
 
-    /* Default to QEMU if no platform detected */
+    /* No default platform - must be explicitly detected */
     if (!current_platform) {
-        current_platform = &qemu_virt_platform;
+        uart_puts("DEVMAP: WARNING: No platform detected\n");
+    } else {
+        uart_puts("DEVMAP: Detected platform: ");
+        uart_puts(current_platform->name);
+        uart_puts("\n");
     }
 
     /* Map all devices discovered from the device tree */

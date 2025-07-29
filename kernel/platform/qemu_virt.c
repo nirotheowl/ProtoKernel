@@ -7,6 +7,8 @@
 #include <platform/devmap.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <device/device.h>
+#include <device/resource.h>
 
 /* QEMU virt machine device memory map - MINIMAL for early boot only */
 static const devmap_entry_t qemu_virt_devmap[] = {
@@ -30,10 +32,19 @@ static const platform_devmap_t qemu_virt_platform_devmap = {
 /* Platform detection for QEMU virt */
 static int qemu_virt_detect(void)
 {
-    /* TODO: Implement actual detection logic */
-    /* For now, we'll check for QEMU-specific features or DTB compatible string */
-    /* This is a placeholder that always returns true for QEMU development */
-    return 1;
+    /* Check if this is QEMU virt platform by looking for specific devices
+     * or compatible strings in the device tree */
+    
+    // For now, check if we can find the PL011 UART at the expected address
+    struct device *uart = device_find_by_compatible("arm,pl011");
+    if (uart) {
+        struct resource *res = device_get_resource(uart, RES_TYPE_MEM, 0);
+        if (res && res->start == 0x09000000) {
+            return 1;  // This is likely QEMU virt
+        }
+    }
+    
+    return 0;
 }
 
 /* Platform descriptor */
