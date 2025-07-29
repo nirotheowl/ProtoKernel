@@ -16,7 +16,7 @@ typedef struct {
     uint32_t nameoff;   /* Offset in string table */
 } fdt_prop_t;
 
-/* Helper to align to 4-byte boundary */
+/* Align to 4-byte boundary */
 static inline uint32_t fdt_align(uint32_t offset) {
     return (offset + 3) & ~3;
 }

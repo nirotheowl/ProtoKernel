@@ -5,6 +5,7 @@
 #include <drivers/fdt.h>
 #include <uart.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <boot_config.h>
 
 // External symbols from linker script
@@ -21,6 +22,9 @@ static pmm_stats_t pmm_stats = {0};
 // Start and end of managed memory
 static uint64_t pmm_start = 0;
 static uint64_t pmm_end = 0;
+
+// Initialization flag
+static bool pmm_initialized = false;
 
 
 // Helper functions
@@ -187,6 +191,9 @@ void pmm_init(uint64_t kernel_end, struct memory_info *mem_info) {
     
     // Reserve UART region
     pmm_reserve_region(0x09000000, 0x1000, "PL011 UART");
+    
+    // Mark PMM as initialized
+    pmm_initialized = true;
     
     uart_puts("PMM: Initialization complete\n");
     uart_puts("  Free pages: ");
@@ -451,4 +458,9 @@ void pmm_print_stats(void) {
         uart_puthex(fdt_size);
         uart_puts(" bytes)\n");
     }
+}
+
+// Check if PMM is initialized
+bool pmm_is_initialized(void) {
+    return pmm_initialized;
 }

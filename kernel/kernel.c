@@ -15,8 +15,6 @@
 #include <memory/vmm.h>
 #include <platform/devmap.h>
 #include <device/device.h>
-#include <device/resource.h>
-#include <device/device_tree.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -27,7 +25,7 @@ void kernel_main(void* dtb) {
     uart_init();
     // uart_puts("\nKernel starting...\n");
     
-    // Initialize FDT manager early
+    // Initialize FDT manager early - just preserves the pointer
     if (!fdt_mgr_init(dtb)) {
         uart_puts("WARNING: Failed to initialize FDT manager\n");
     }
@@ -70,34 +68,16 @@ void kernel_main(void* dtb) {
         uart_puts("WARNING: Failed to map FDT to virtual memory\n");
     }
     
-    // Initialize device tree subsystem BEFORE devmap_init
-    // This allows devmap to use discovered devices
-    // uart_puts("\nInitializing device management...\n");
-    if (device_tree_init(fdt_mgr_get_blob()) < 0) {
-        uart_puts("ERROR: Failed to initialize device tree subsystem\n");
-    } else {
-        // Enumerate all devices from FDT
-        // uart_puts("Enumerating devices from device tree...\n");
-        int device_count = device_tree_populate_devices();
-        if (device_count < 0) {
-            uart_puts("ERROR: Failed to enumerate devices\n");
-        } else {
-            // uart_puts("Device enumeration complete. Found ");
-            // uart_puthex(device_count);
-            // uart_puts(" devices.\n");
-            
-            // Migrate devices to permanent storage now that PMM is available
-            // This frees up the early pool and provides more space for devices
-            if (device_count > 0) {
-                int migrated = device_migrate_to_permanent();
-                if (migrated > 0) {
-                    // uart_puts("Migrated ");
-                    // uart_puthex(migrated);
-                    // uart_puts(" devices to permanent storage\n");
-                }
-            }
-        }
+    // Initialize device subsystem (pool, tree parser, enumeration)
+    int device_count = device_init(fdt_mgr_get_blob());
+    if (device_count < 0) {
+        uart_puts("ERROR: Failed to initialize device subsystem\n");
     }
+    
+    // Initialize Device Mapping system
+    // Now devmap_init can use the discovered devices
+    // uart_puts("Initializing devmap...\n");
+    devmap_init();
     
     // Initialize Device Mapping system
     // Now devmap_init can use the discovered devices
@@ -169,9 +149,9 @@ void kernel_main(void* dtb) {
     // struct device *uart_dev = device_find_by_compatible("arm,pl011");
     // struct device *gic_dev = device_find_by_type(DEV_TYPE_INTERRUPT);
     
-    // Print early pool statistics
-    // extern void early_pool_print_stats(void);
-    // early_pool_print_stats();
+    // Print device pool statistics
+    extern void device_pool_print_stats(void);
+    device_pool_print_stats();
     
     // Run device tests
     // extern void run_device_tests(void);

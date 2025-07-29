@@ -10,10 +10,10 @@
 #include <string.h>
 #include <uart.h>
 
-/* Forward declarations for early pool functions */
-extern struct resource *early_pool_alloc_resource(void);
-extern char *early_pool_strdup(const char *str);
-extern void *early_pool_alloc(size_t size);
+/* Forward declarations for device pool functions */
+extern struct resource *device_pool_alloc_resource(void);
+extern char *device_pool_strdup(const char *str);
+extern void *device_pool_alloc(size_t size);
 
 /* Resource type names for debugging */
 static const char *resource_type_names[] = {
@@ -48,8 +48,8 @@ struct resource system_io_resource = {
 struct resource *resource_alloc(void) {
     struct resource *res;
     
-    /* Allocate from early pool */
-    res = early_pool_alloc_resource();
+    /* Allocate from device pool */
+    res = device_pool_alloc_resource();
     if (!res) {
         uart_puts("RESOURCE: Failed to allocate resource\n");
         return NULL;
@@ -110,7 +110,7 @@ int device_add_resource(struct device *dev, struct resource *res) {
     
     /* Allocate resource array if needed */
     if (!dev->resources) {
-        dev->resources = (struct resource *)early_pool_alloc(
+        dev->resources = (struct resource *)device_pool_alloc(
             DEVICE_MAX_RESOURCES * sizeof(struct resource));
         if (!dev->resources) {
             uart_puts("RESOURCE: Failed to allocate resource array\n");
@@ -125,7 +125,7 @@ int device_add_resource(struct device *dev, struct resource *res) {
     
     /* Duplicate name if provided */
     if (res->name) {
-        dev_res->name = early_pool_strdup(res->name);
+        dev_res->name = device_pool_strdup(res->name);
     }
     
     dev->num_resources++;

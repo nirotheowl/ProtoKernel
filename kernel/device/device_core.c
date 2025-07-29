@@ -10,10 +10,9 @@
 #include <string.h>
 #include <uart.h>
 
-/* Forward declarations for early pool functions */
-extern bool early_pool_init(void);
-extern struct device *early_pool_alloc_device(void);
-extern char *early_pool_strdup(const char *str);
+/* Forward declarations for device pool functions */
+extern struct device *device_pool_alloc_device(void);
+extern char *device_pool_strdup(const char *str);
 
 /* Device registry structure */
 typedef struct {
@@ -66,16 +65,11 @@ static bool device_core_init(void) {
         return true;
     }
     
-    /* Initialize early pool for device allocation */
-    // uart_puts("DEVICE: Calling early_pool_init\n");
-    if (!early_pool_init()) {
-        // uart_puts("DEVICE: Failed to initialize early pool\n");
-        return false;
-    }
+    /* Device pool must already be initialized by kernel_main */
     
     /* Allocate root device directly to avoid recursion */
     // uart_puts("DEVICE: Allocating root device directly\n");
-    root = early_pool_alloc_device();
+    root = device_pool_alloc_device();
     if (!root) {
         // uart_puts("DEVICE: Failed to allocate root device\n");
         return false;
@@ -112,8 +106,8 @@ struct device *device_alloc(void) {
         return NULL;
     }
     
-    /* Allocate from early pool */
-    dev = early_pool_alloc_device();
+    /* Allocate from device pool */
+    dev = device_pool_alloc_device();
     if (!dev) {
         // uart_puts("DEVICE: Failed to allocate device\n");
         return NULL;
@@ -384,15 +378,6 @@ int device_for_each_child(struct device *parent,
     return 0;
 }
 
-/* Get registry head for migration */
-struct device *device_get_registry_head(void) {
-    return device_registry.devices;
-}
-
-/* Set registry head after migration */
-void device_set_registry_head(struct device *head) {
-    device_registry.devices = head;
-}
 
 /* Get root device */
 struct device *device_get_root(void) {
@@ -629,4 +614,37 @@ void device_print_tree(struct device *root, int indent) {
     for (child = root->children; child; child = child->sibling) {
         device_print_tree(child, indent + 1);
     }
+}
+
+/* Initialize device subsystem */
+int device_init(void *fdt) {
+    int device_count = 0;
+    
+    /* Initialize device pool - requires PMM to be ready */
+    extern bool device_pool_init(void);
+    if (!device_pool_init()) {
+        uart_puts("ERROR: Failed to initialize device pool\n");
+        return -1;
+    }
+    
+    /* Initialize device tree parser with FDT */
+    extern int device_tree_init(void *fdt);
+    if (device_tree_init(fdt) < 0) {
+        uart_puts("ERROR: Failed to initialize device tree subsystem\n");
+        return -1;
+    }
+    
+    /* Enumerate all devices from FDT */
+    extern int device_tree_populate_devices(void);
+    device_count = device_tree_populate_devices();
+    if (device_count < 0) {
+        uart_puts("ERROR: Failed to enumerate devices\n");
+        return -1;
+    }
+    
+    // uart_puts("Device subsystem initialized. Found ");
+    // uart_puthex(device_count);
+    // uart_puts(" devices.\n");
+    
+    return device_count;
 }

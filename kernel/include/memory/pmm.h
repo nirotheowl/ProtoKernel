@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 // Page size is 4KB
 #define PMM_PAGE_SIZE 4096
@@ -57,5 +58,8 @@ uint64_t pmm_get_memory_end(void);
 
 // Print memory statistics
 void pmm_print_stats(void);
+
+// Check if PMM is initialized
+bool pmm_is_initialized(void);
 
 #endif // PMM_H

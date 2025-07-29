@@ -243,18 +243,18 @@ static bool test_device_type_conversion(void) {
     return true;
 }
 
-/* Test early pool functionality */
-static bool test_early_pool(void) {
-    extern bool early_pool_check_integrity(void);
-    extern size_t early_pool_get_free(void);
+/* Test device pool functionality */
+static bool test_device_pool(void) {
+    extern bool device_pool_check_integrity(void);
+    extern size_t device_pool_get_free(void);
     
     /* Check pool integrity */
-    if (!early_pool_check_integrity()) {
+    if (!device_pool_check_integrity()) {
         return false;
     }
     
     /* Verify we have free space */
-    if (early_pool_get_free() == 0) {
+    if (device_pool_get_free() == 0) {
         return false;
     }
     
@@ -273,7 +273,7 @@ void run_device_tests(void) {
     RUN_TEST(resource_management);
     RUN_TEST(resource_validation);
     RUN_TEST(device_type_conversion);
-    RUN_TEST(early_pool);
+    RUN_TEST(device_pool);
     
     uart_puts("\n----------------------------------------\n");
     uart_puts("Test Summary: ");

@@ -131,9 +131,10 @@ uint32_t device_count_total(void);
 const char *device_type_to_string(device_type_t type);
 device_type_t device_string_to_type(const char *str);
 
-/* Device data pool migration */
-int device_migrate_to_permanent(void);
-bool device_migration_complete(void);
-void device_datapool_stats(void);
+/* Device pool statistics */
+void device_pool_stats(void);
+
+/* Initialize device subsystem */
+int device_init(void *fdt);
 
 #endif /* __DEVICE_H */

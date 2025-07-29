@@ -35,19 +35,10 @@ static int snprintf(char *buf, size_t size, const char *fmt, ...) {
 }
 
 /* Forward declarations */
-extern char *early_pool_strdup(const char *str);
-extern bool early_pool_init(void);
+extern char *device_pool_strdup(const char *str);
 
 /* Global FDT blob pointer */
 static void *fdt_blob = NULL;
-
-/* Early context for device allocation */
-static struct dt_early_context early_context = {
-    .pool_base = NULL,
-    .pool_size = 0,
-    .pool_used = 0,
-    .device_count = 0
-};
 
 /* Device type mapping table */
 typedef struct {
@@ -120,12 +111,6 @@ int device_tree_init(void *fdt) {
     }
     
     fdt_blob = fdt;
-    
-    /* Initialize early pool if not already done */
-    if (!early_pool_init()) {
-        // uart_puts("DT: Failed to initialize early pool\n");
-        return -1;
-    }
     
     // uart_puts("DT: Initialized with FDT at ");
     // uart_puthex((uint64_t)fdt);
@@ -374,7 +359,7 @@ int device_tree_parse_reg(struct device *dev, int node_offset) {
         
         /* Add memory resource */
         device_add_mem_resource(dev, addr, size, RES_MEM_CACHEABLE, 
-                               early_pool_strdup(name));
+                               device_pool_strdup(name));
     }
     
     return i;
@@ -493,7 +478,7 @@ int device_tree_parse_interrupts(struct device *dev, int node_offset) {
         }
         
         /* Add IRQ resource */
-        device_add_irq_resource(dev, irq, flags, early_pool_strdup(name));
+        device_add_irq_resource(dev, irq, flags, device_pool_strdup(name));
     }
     
     return i;

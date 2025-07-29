@@ -34,14 +34,6 @@
 #define FDT_STATUS_DISABLED     "disabled"
 #define FDT_STATUS_FAIL         "fail"
 
-/* Early device allocation context */
-struct dt_early_context {
-    void                *pool_base;     /* Early memory pool base */
-    size_t              pool_size;      /* Pool size */
-    size_t              pool_used;      /* Current usage */
-    uint32_t            device_count;   /* Number of devices allocated */
-};
-
 /* Device tree parsing callbacks */
 typedef int (*dt_device_callback_t)(int node_offset, const char *name,
                                    const char *path, void *ctx);
@@ -50,11 +42,6 @@ typedef int (*dt_device_callback_t)(int node_offset, const char *name,
 
 /* Initialize device tree subsystem */
 int device_tree_init(void *fdt_blob);
-
-/* Early boot device allocation */
-struct device *device_tree_alloc_early(struct dt_early_context *ctx);
-int device_tree_init_early_pool(void *pool_base, size_t pool_size);
-size_t device_tree_get_early_pool_usage(void);
 
 /* Device enumeration and creation */
 int device_tree_enumerate(dt_device_callback_t callback, void *ctx);
