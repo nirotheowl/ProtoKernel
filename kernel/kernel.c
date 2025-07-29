@@ -5,40 +5,42 @@
 #include <memory/pmm.h>
 #include <memory/memmap.h>
 #include <exceptions/exceptions.h>
-// #include <tests/mmu_tests.h>
-// #include <tests/pmm_tests.h>
-// #include <tests/memory_tests.h>
-// #include <tests/fdt_tests.h>
-// #include <tests/fdt_mgr_tests.h>
 #include <drivers/fdt.h>
 #include <drivers/fdt_mgr.h>
 #include <memory/vmm.h>
 #include <platform/devmap.h>
 #include <device/device.h>
+// #include <tests/mmu_tests.h>
+// #include <tests/pmm_tests.h>
+// #include <tests/memory_tests.h>
+// #include <tests/fdt_tests.h>
+// #include <tests/fdt_mgr_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;
 extern char _kernel_end;
 
 void kernel_main(void* dtb) {
-    // Initialize UART with temporary boot.S mapping
+
+    // TODO: Check if this init is necessary 
     uart_init();
-    // uart_puts("\nKernel starting...\n");
     
-    // Initialize FDT manager early - just preserves the pointer
+    // Initialize FDT Manager (just preserves pointer) 
     if (!fdt_mgr_init(dtb)) {
+        // TODO: No UART output this early, do something else here 
         uart_puts("WARNING: Failed to initialize FDT manager\n");
     }
     
-    // Initialize memory subsystems first
-    // uart_puts("Initializing memmap...\n");
+    // Initialize memory subsystems 
     memmap_init();
     
     // Parse Device Tree to get memory information using FDT manager
     memory_info_t mem_info;
     if (!fdt_mgr_get_memory_info(&mem_info)) {
-        // Use defaults if FDT parse fails
+        // TODO: No UART output this early, do something else here 
         uart_puts("WARNING: Failed to parse memory from FDT, using defaults\n");
+        // TODO: Review if these are sensible defaults, or if we should use defaults at all. 
+        // Use defaults if FDT parse fails
         mem_info.count = 1;
         mem_info.regions[0].base = 0x40000000;
         mem_info.regions[0].size = 256 * 1024 * 1024;
@@ -46,44 +48,44 @@ void kernel_main(void* dtb) {
     }
     
     // Initialize PMM
-    // uart_puts("Initializing PMM...\n");
     pmm_init((uint64_t)&_kernel_end, (struct memory_info *)&mem_info);
     
+    // TODO: See if this can be moved into the pmm_init call 
     // Reserve FDT pages in PMM before any allocations
     if (!fdt_mgr_reserve_pages()) {
+        // TODO: No UART output this early, do something else here 
         uart_puts("WARNING: Failed to reserve FDT pages\n");
     }
     
     // Initialize VMM
-    // uart_puts("Initializing VMM...\n");
     vmm_init();
     
     // Create DMAP region for all physical memory
     // This must be done before device mappings so PMM can use DMAP for page clearing
-    // uart_puts("Creating DMAP...\n");
     vmm_create_dmap();
     
     // Map FDT to permanent virtual address
     if (!fdt_mgr_map_virtual()) {
+        // TODO: No UART output this early, do something else here 
         uart_puts("WARNING: Failed to map FDT to virtual memory\n");
     }
     
     // Initialize device subsystem (pool, tree parser, enumeration)
     int device_count = device_init(fdt_mgr_get_blob());
     if (device_count < 0) {
+        // TODO: No UART output this early, do something else here 
         uart_puts("ERROR: Failed to initialize device subsystem\n");
     }
     
     // Initialize Device Mapping system
     // Now devmap_init can use the discovered devices
-    // uart_puts("Initializing devmap...\n");
     devmap_init();
     
     // Now initialize and update UART with proper mapping
     uart_init();
     uart_update_base();
    
-    // Start outputting kernel boot messages 
+    // KERNEL LOGS START HERE! 
     uart_puts("\n=======================================\n");
     uart_puts("ARM64 Kernel Booting...\n");
     uart_puts("=======================================\n\n");
@@ -125,8 +127,6 @@ void kernel_main(void* dtb) {
     // Report FDT manager state
     fdt_mgr_print_info();
     
-    uart_puts("\nDevice mappings initialized successfully\n");
-    
     // Debug: Check what's in the page tables
     vmm_debug_walk(vmm_get_kernel_context(), 0xFFFF000040200000UL);  // Kernel address
     vmm_debug_walk(vmm_get_kernel_context(), 0xFFFFA00000000000UL);  // DMAP start
@@ -135,34 +135,15 @@ void kernel_main(void* dtb) {
     devmap_print_mappings();
     
     // Print memory statistics
-    // pmm_print_stats();
-    
-    // Print device tree that was enumerated earlier
-    // device_tree_dump_devices();
-    
-    // Commented out detailed device info - not needed for normal boot
-    // struct device *uart_dev = device_find_by_compatible("arm,pl011");
-    // struct device *gic_dev = device_find_by_type(DEV_TYPE_INTERRUPT);
+    pmm_print_stats();
     
     // Print device pool statistics
-    extern void device_pool_print_stats(void);
-    device_pool_print_stats();
-    
-    // Run device tests
-    // extern void run_device_tests(void);
-    // run_device_tests();
-    
-    // Run FDT manager tests
-    // run_fdt_mgr_tests();
-    
-    // FDT tests work correctly
-    // run_fdt_tests();
-    
-    // TODO: Update these tests for higher-half kernel
-    // The old tests assume physical addresses and need updating:
-    // - PMM tests need to account for virtual addresses
-    // - MMU tests need rewriting since MMU is already enabled
-    // - Memory tests need updating for new memory layout
+    // extern void device_pool_print_stats(void);
+    // device_pool_print_stats();
+   
+    // KERNEL TESTS START HERE!
+
+    // Tests to be added ...
     
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");
