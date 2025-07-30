@@ -95,7 +95,8 @@ bool vmm_unmap_page(vmm_context_t *ctx, uint64_t vaddr);
 bool vmm_unmap_range(vmm_context_t *ctx, uint64_t vaddr, size_t size);
 
 /* Create the DMAP region for all physical memory */
-void vmm_create_dmap(void);
+struct memory_info;  /* Forward declaration */
+void vmm_create_dmap(struct memory_info *mem_info);
 
 /* Get current kernel page table context */
 vmm_context_t* vmm_get_kernel_context(void);

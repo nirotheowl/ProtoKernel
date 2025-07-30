@@ -36,18 +36,27 @@
 /* Device memory base in virtual space */
 #define DEVICE_VIRT_BASE    0xFFFF000000000000ULL
 
-/* Physical memory base */
-#define PHYS_BASE           0x40000000ULL
+/* Physical memory base - now dynamic, set at runtime */
+extern uint64_t dmap_phys_base;
+extern uint64_t dmap_phys_max;
 
 /* DMAP (Direct Map) region configuration */
 #define DMAP_BASE           0xFFFFA00000000000ULL  /* Direct map base address (FreeBSD standard) */
 #define DMAP_SIZE           0x0000600000000000ULL  /* 96TB direct map region */
 
 /* Convert physical address to DMAP virtual address */
-#define PHYS_TO_DMAP(pa)    ((uint64_t)(pa) + DMAP_BASE - PHYS_BASE)
+#define PHYS_TO_DMAP(pa)    ({ \
+    uint64_t _pa = (uint64_t)(pa); \
+    (_pa >= dmap_phys_base && _pa < dmap_phys_max) ? \
+        (DMAP_BASE + (_pa - dmap_phys_base)) : 0; \
+})
 
 /* Convert DMAP virtual address to physical address */
-#define DMAP_TO_PHYS(va)    ((uint64_t)(va) - DMAP_BASE + PHYS_BASE)
+#define DMAP_TO_PHYS(va)    ({ \
+    uint64_t _va = (uint64_t)(va); \
+    (_va >= DMAP_BASE && _va < (DMAP_BASE + (dmap_phys_max - dmap_phys_base))) ? \
+        (_va - DMAP_BASE + dmap_phys_base) : 0; \
+})
 
 /* Check if address is in DMAP range */
 #define VIRT_IN_DMAP(va)    ((uint64_t)(va) >= DMAP_BASE && \

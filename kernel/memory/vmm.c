@@ -18,6 +18,10 @@
 #define PTE_AP_RW_EL1      PTE_AP_RW             /* Alias for clarity */
 #define PTE_AP_RO_EL1      PTE_AP_RO             /* Alias for clarity */
 
+/* Global DMAP physical memory bounds */
+uint64_t dmap_phys_base = 0;
+uint64_t dmap_phys_max = 0;
+
 /* Memory attribute indices */
 #define PTE_ATTR_DEVICE    PTE_ATTRINDX(MT_DEVICE_nGnRnE)
 #define PTE_ATTR_NORMAL_NC PTE_ATTRINDX(MT_NORMAL_NC)
@@ -553,7 +557,7 @@ bool vmm_unmap_range(vmm_context_t *ctx, uint64_t vaddr, size_t size) {
 }
 
 /* Create the DMAP region for all physical memory */
-void vmm_create_dmap(void) {
+void vmm_create_dmap(struct memory_info *mem_info) {
     // uart_puts("\nCreating DMAP region...\n");
     
     if (!vmm_initialized) {
@@ -561,52 +565,68 @@ void vmm_create_dmap(void) {
         return;
     }
     
-    /* Get total physical memory from PMM */
-    uint64_t phys_start = PHYS_BASE;
-    uint64_t phys_end = pmm_get_memory_end();
-    uint64_t size = phys_end - phys_start;
-    
-    // uart_puts("VMM: Mapping physical memory ");
-    // uart_puthex(phys_start);
-    // uart_puts(" - ");
-    // uart_puthex(phys_end);
-    // uart_puts(" to DMAP\n");
-    
-    /* Map all physical memory to DMAP region */
-    uint64_t dmap_start = PHYS_TO_DMAP(phys_start);
-    
-    // uart_puts("VMM: DMAP will start at ");
-    // uart_puthex(dmap_start);
-    // uart_puts("\n");
-    
-    if (!vmm_map_range(&kernel_context, dmap_start, phys_start, size, 
-                       VMM_ATTR_RW)) {
-        uart_puts("VMM: Failed to create DMAP!\n");
+    if (!mem_info) {
+        uart_puts("VMM: Error - No memory info provided for DMAP\n");
         return;
     }
     
-    // uart_puts("VMM: DMAP created at ");
-    // uart_puthex(dmap_start);
-    // uart_puts(" - ");
-    // uart_puthex(dmap_start + size);
-    // uart_puts("\n");
+    /* Cast to memory_info_t - defined in drivers/fdt.h */
+    typedef struct {
+        struct { uint64_t base; uint64_t size; } regions[8];
+        int count;
+        uint64_t total_size;
+    } memory_info_t;
+    memory_info_t *info = (memory_info_t *)mem_info;
+    
+    /* Set global DMAP bounds based on first region */
+    dmap_phys_base = info->regions[0].base;
+    dmap_phys_max = info->regions[0].base;
+    
+    /* Find the maximum physical address across all regions */
+    for (int i = 0; i < info->count; i++) {
+        uint64_t region_end = info->regions[i].base + info->regions[i].size;
+        if (region_end > dmap_phys_max) {
+            dmap_phys_max = region_end;
+        }
+    }
+    
+    /* Map each memory region to DMAP */
+    for (int i = 0; i < info->count; i++) {
+        uint64_t phys_start = info->regions[i].base;
+        uint64_t size = info->regions[i].size;
+        
+        /* Calculate DMAP virtual address using dynamic base */
+        /* DMAP formula: va = DMAP_BASE + (pa - lowest_phys_base) */
+        uint64_t offset = phys_start - info->regions[0].base;
+        uint64_t dmap_va = DMAP_BASE + offset;
+        
+        // uart_puts("VMM: Mapping RAM region ");
+        // uart_puthex(phys_start);
+        // uart_puts(" - ");
+        // uart_puthex(phys_start + size);
+        // uart_puts(" to DMAP at ");
+        // uart_puthex(dmap_va);
+        // uart_puts("\n");
+        
+        if (!vmm_map_range(&kernel_context, dmap_va, phys_start, size, 
+                           VMM_ATTR_RW)) {
+            uart_puts("VMM: Failed to create DMAP for region ");
+            uart_puthex(i);
+            uart_puts("!\n");
+            return;
+        }
+    }
     
     /* Flush entire TLB to ensure mappings are active */
     vmm_flush_tlb_all();
     
-    /* Test DMAP accessibility before marking as ready */
+    /* Test DMAP accessibility using first region */
+    uint64_t test_dmap_va = DMAP_BASE;
+    volatile uint64_t *test_addr = (volatile uint64_t *)test_dmap_va;
+    
     // uart_puts("VMM: Testing DMAP accessibility...\n");
-    volatile uint64_t *test_addr = (volatile uint64_t *)dmap_start;
-    // uart_puts("  Reading from DMAP start: ");
-    // uart_puthex((uint64_t)test_addr);
-    // uart_puts("\n");
     uint64_t test_val = *test_addr;
-    // uart_puts("  Read value: ");
-    // uart_puthex(test_val);
-    // uart_puts("\n");
-    // uart_puts("  Writing test pattern...\n");
     *test_addr = 0xDEADBEEF12345678ULL;
-    // uart_puts("  Reading back...\n");
     test_val = *test_addr;
     if (test_val != 0xDEADBEEF12345678ULL) {
         uart_puts("VMM: DMAP test failed! Read ");
@@ -614,10 +634,13 @@ void vmm_create_dmap(void) {
         uart_puts("\n");
         return;
     }
-    // uart_puts("  DMAP test passed!\n");
     
     /* Mark DMAP as ready */
     dmap_ready = true;
+    
+    // uart_puts("VMM: DMAP created successfully for ");
+    // uart_puthex(info->count);
+    // uart_puts(" memory regions\n");
 }
 
 /* Get current kernel page table context */

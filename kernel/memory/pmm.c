@@ -377,6 +377,11 @@ int pmm_is_available(uint64_t pa) {
     return page < pmm_total_pages && !pmm_test_bit(page);
 }
 
+// Get start of managed physical memory
+uint64_t pmm_get_memory_start(void) {
+    return pmm_start;
+}
+
 // Get end of managed physical memory
 uint64_t pmm_get_memory_end(void) {
     return pmm_end;

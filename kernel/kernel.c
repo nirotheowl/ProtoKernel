@@ -16,6 +16,7 @@
 // #include <tests/memory_tests.h>
 // #include <tests/fdt_tests.h>
 // #include <tests/fdt_mgr_tests.h>
+// #include <tests/test_dmap.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -51,16 +52,18 @@ void kernel_main(void* dtb) {
     
     // Create DMAP region for all physical memory
     // This must be done before device mappings so PMM can use DMAP for page clearing
-    vmm_create_dmap();
+    vmm_create_dmap((struct memory_info *)&mem_info);
     
     // Map FDT to permanent virtual address
     if (!fdt_mgr_map_virtual()) {
+        // No UART output for this panic 
         panic("Failed to map FDT to virtual memory");
     }
     
     // Initialize device subsystem (pool, tree parser, enumeration)
     int device_count = device_init(fdt_mgr_get_blob());
     if (device_count < 0) {
+        // No UART output for this panic 
         panic("Failed to initialize device subsystem");
     }
     
@@ -129,7 +132,7 @@ void kernel_main(void* dtb) {
    
     // KERNEL TESTS START HERE!
 
-    // Tests to be added ...
+    // No tests in here for now. 
     
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");
