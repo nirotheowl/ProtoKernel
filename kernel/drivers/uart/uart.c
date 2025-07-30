@@ -10,14 +10,6 @@ static volatile uint32_t *uart_base = NULL;
 #define UART0_FR   (uart_base[0x18/4])
 
 void uart_init(void) {
-    // Don't set uart_base here - wait for proper mapping
-    uart_base = NULL;
-    
-    // PL011 UART is already initialized by QEMU
-    // In a real implementation, we'd configure baud rate, data bits, etc.
-}
-
-void uart_update_base(void) {
     const platform_desc_t *platform = platform_get_current();
     
     // Platform must specify console UART
