@@ -104,12 +104,12 @@ Entry Types:
 
 3.1 Boot Sequence Memory Operations
 -----------------------------------
-1. CPU State Setup (arch/arm64/boot.S:64-106)
+1. CPU State Setup 
    - Drop from EL3 -> EL2 -> EL1 if necessary
    - Disable MMU and caches initially
    - Clear instruction cache and TLB
 
-2. Physical Address Discovery (arch/arm64/boot.S:122-129)
+2. Physical Address Discovery 
    - Calculate actual load address using PC-relative addressing
    - Store in x28 for use throughout boot
 
@@ -120,23 +120,23 @@ Entry Types:
      - TTBR1: L0 (1 page) + L1 (1 page) + L2 (1 page)
    - Clear all page table memory
 
-4. Identity Mapping Creation (arch/arm64/boot.S:214-254)
+4. Identity Mapping Creation
    - Map first 1GB of physical memory for bootstrap
    - Uses 2MB block mappings at L2 level
    - Enables MMU to work with physical addresses initially
 
-5. Higher-Half Mapping (arch/arm64/boot.S:261-302)
+5. Higher-Half Mapping
    - Create TTBR1 mappings for kernel virtual addresses
    - Maps 64MB region where kernel is loaded
    - All L2 entries map to same physical region (fixed mapping)
 
-6. MMU Configuration (arch/arm64/boot.S:304-358)
+6. MMU Configuration
    - Configure MAIR_EL1 for memory attributes
    - Set up TCR_EL1 for translation control
    - Load TTBR0/TTBR1 with page table addresses
    - Enable MMU, I-cache, and D-cache
 
-7. Jump to Higher Half (arch/arm64/boot.S:360-374)
+7. Jump to Higher Half
    - Use absolute branch to virtual address
    - Continue execution at 0xFFFF000040200xxx
    - Set up virtual stack pointer
@@ -150,118 +150,10 @@ Index | Type                | Attributes
 2     | Normal non-cached   | Inner/Outer Non-cacheable
 3     | Normal write-back   | Inner/Outer Write-Back cacheable
 
-4. RUNTIME MEMORY MANAGEMENT
-============================
-
-4.0 Device Data Management
---------------------------
-The kernel maintains device information discovered from FDT in two phases:
-
-Early Boot Pool (Before PMM):
-- Location: 0xFFFF000040225000 (kernel BSS + alignment)
-- Size: 512KB static allocation
-- Purpose: Store device structures during FDT enumeration
-- Usage: ~35KB on QEMU, but supports device-rich platforms
-- Contains: Device structures, resources, compatible strings
-
-Permanent Device Storage (After PMM):
-- Location: 0xFFFF000041200000 (dynamically allocated)
-- Size: ~52KB (allocated based on device count)
-- Purpose: Long-term storage for device registry
-- Migration: Happens early in kernel_main after PMM init
-- Contains: All device data copied from early pool
-
-4.1 Physical Memory Manager (PMM)
----------------------------------
-The PMM manages physical memory allocation using a bitmap allocator.
-
-Key Features:
-- Bitmap-based tracking (1 bit per 4KB page)
-- Supports single and contiguous page allocation
-- Tracks statistics for monitoring
-- Memory clearing on allocation
-
-PMM Regions:
-- Start: After kernel end (aligned to 4KB)
-- End: 0x40000000 + configured RAM size
-- Bitmap Size: 32KB for 1GB of memory
-
-Reserved Regions:
-- Kernel code/data/BSS
-- PMM bitmap itself
-- Device MMIO regions
-
-4.2 Memory Region Manager (memmap)
-----------------------------------
-Tracks memory regions with type and attribute information.
-
-Region Types:
-- MEM_TYPE_FREE: Available RAM
-- MEM_TYPE_KERNEL_CODE: Kernel .text section
-- MEM_TYPE_KERNEL_DATA: Kernel .data section
-- MEM_TYPE_KERNEL_BSS: Kernel .bss section
-- MEM_TYPE_DEVICE_MMIO: Memory-mapped I/O
-- MEM_TYPE_PAGE_TABLES: Page table storage
-- MEM_TYPE_DMA_COHERENT: DMA-capable memory
-
-Region Attributes:
-- MEM_ATTR_CACHEABLE: Can be cached
-- MEM_ATTR_WRITE_BACK: Write-back caching
-- MEM_ATTR_EXECUTABLE: Contains executable code
-- MEM_ATTR_SECURE: Secure memory
-- MEM_ATTR_DMA_CAPABLE: Suitable for DMA
-
-4.3 Virtual Memory Manager (VMM)
---------------------------------
-Handles creation and management of page mappings for kernel and user space.
-
-Core Features:
-- Supports both TTBR0 (user) and TTBR1 (kernel) page tables
-- Handles all 4 levels of page tables (L0-L3)
-- Optimizes mappings using 2MB blocks when possible
-- Provides TLB management functions
-- Tracks page table allocations through PMM
-
-Mapping Strategies:
-- 4KB pages: For fine-grained mappings
-- 2MB blocks: For large contiguous regions (L2 level)
-- Automatic selection based on alignment and size
-
-Key Functions:
-- vmm_init(): Initialize VMM using existing kernel page tables
-- vmm_map_page(): Map single 4KB page with attributes
-- vmm_map_range(): Map range using optimal block size
-- vmm_create_dmap(): Create direct physical mapping region
-- vmm_virt_to_phys(): Walk page tables to translate addresses
-
-4.4 Direct Map (DMAP) Region
-----------------------------
-The DMAP provides direct access to all physical memory through a simple offset.
-
-DMAP Configuration:
-- Base Address: 0xFFFFA00000000000 (L0[320], L1[0])
-- Maps To: Physical memory starting at 0x40000000
-- Conversion: PHYS_TO_DMAP(pa) = pa + 0xFFFFA00000000000 - 0x40000000
-- Size: Maps all available physical memory (e.g., 1GB)
-- Page Size: Uses efficient 2MB block mappings
-
-Benefits:
-- O(1) physical to virtual translation
-- No page table walks needed for physical access
-- Enables efficient page clearing and copying
-- Used by PMM for zeroing allocated pages
-- Simplifies kernel memory management
-
-Usage:
-- PMM uses DMAP addresses after initialization
-- Kernel can directly access any physical page
-- No need for temporary mappings
-- Critical for performance in memory-intensive operations
-
-5. MEMORY PROTECTION AND ATTRIBUTES
+4. MEMORY PROTECTION AND ATTRIBUTES
 ===================================
 
-5.1 Access Permissions
+4.1 Access Permissions
 ----------------------
 AP Bits | EL1 Access    | EL0 Access
 --------|---------------|-------------
@@ -270,7 +162,7 @@ AP Bits | EL1 Access    | EL0 Access
 10      | Read-only     | No access
 11      | Read-only     | Read-only
 
-5.2 Shareability Domains
+4.2 Shareability Domains
 ------------------------
 SH Bits | Domain          | Description
 --------|-----------------|------------------------------------------
@@ -279,7 +171,7 @@ SH Bits | Domain          | Description
 10      | Outer shareable | Shared across clusters
 11      | Inner shareable | Shared within cluster
 
-5.3 Execute Permissions
+4.3 Execute Permissions
 -----------------------
 - PXN (bit 53): Privileged execute never
 - UXN (bit 54): Unprivileged execute never
@@ -289,10 +181,10 @@ Used to create:
 - Data regions: Non-executable, read-write
 - Stack regions: Non-executable, read-write
 
-6. CRITICAL MEMORY REGIONS
+5. CRITICAL MEMORY REGIONS
 ==========================
 
-6.1 Kernel Sections
+5.1 Kernel Sections
 -------------------
 Section    | Virtual Address        | Attributes
 -----------|------------------------|--------------------------------
@@ -301,7 +193,7 @@ Section    | Virtual Address        | Attributes
 .data      | After .rodata          | RW, Non-executable, Cacheable
 .bss       | After .data            | RW, Non-executable, Cacheable
 
-6.2 Device Memory Regions
+5.2 Device Memory Regions
 -------------------------
 Device         | Physical    | Virtual                | Size   | Attributes
 ---------------|-------------|------------------------|--------|-----------------
@@ -310,7 +202,7 @@ GIC Dist       | 0x08000000  | 0xFFFF000008000000     | 64KB   | Device, nGnRnE
 GIC CPU        | 0x08010000  | 0xFFFF000008010000     | 64KB   | Device, nGnRnE
 PCI MMIO       | 0x10000000  | 0xFFFF000010000000     | 752MB  | Device, nGnRnE
 
-6.3 DMAP Region
+5.3 DMAP Region
 ---------------
 The Direct Map region provides efficient access to all physical memory:
 
@@ -319,47 +211,7 @@ Physical Range | Virtual Range              | Size   | Attributes
 0x40000000 -   | 0xFFFFA00000000000 -       | All    | Normal, RW, Cacheable
 0x80000000     | 0xFFFFA00040000000         | RAM    | 2MB block mappings
 
-7. FUTURE ENHANCEMENTS
-======================
-
-7.1 Planned Features
---------------------
-1. KASLR Support: Randomize kernel virtual base address
-2. Guard Pages: Add unmapped pages between regions
-3. Stack Guard: Protect against stack overflow
-4. W^X Enforcement: Strict write XOR execute policy
-5. ASID Support: Address Space IDs for TLB efficiency
-6. Large Page Support: 1GB huge pages at L1
-7. Device Tree Parsing: Dynamic memory discovery
-8. NUMA Support: Non-uniform memory access
-
-7.2 Memory Reclamation
-----------------------
-After successful boot to higher half:
-1. Remove identity mappings (TTBR0)
-2. Reclaim boot page tables
-3. Reclaim boot code sections
-4. Compact memory regions
-
-8. DEBUGGING AND DIAGNOSTICS
-============================
-
-8.1 Memory State Inspection
----------------------------
-The kernel provides functions to inspect:
-- Current page table mappings
-- Physical memory allocation state
-- Memory region information
-- Translation faults and access violations
-
-8.2 Common Issues
------------------
-1. Translation Faults: Check page table entries and attributes
-2. Alignment Faults: Ensure proper alignment for block mappings
-3. Permission Faults: Verify AP bits and execute permissions
-4. Coherency Issues: Check shareability and cache attributes
-
-9. APPENDIX: KEY CONSTANTS
+6. APPENDIX: KEY CONSTANTS
 ==========================
 
 From paging.h:

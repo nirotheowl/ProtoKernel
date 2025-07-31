@@ -5,7 +5,6 @@
 // External assembly function
 extern void install_exception_vectors(void);
 
-// Helper function to print hex value
 static void print_hex(const char* label, uint64_t value) {
     uart_puts(label);
     uart_puts(": 0x");
