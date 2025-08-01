@@ -11,6 +11,7 @@ sudo apt update
 sudo apt install \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
+    binutils-aarch64-linux-gnu \
     qemu-system-arm \
     make \
     gdb-multiarch \
