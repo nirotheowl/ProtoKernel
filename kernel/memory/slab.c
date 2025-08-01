@@ -13,6 +13,10 @@
 #include <string.h>
 #include <stddef.h>
 
+// Debug printing - disabled by default for production
+#define SLAB_DEBUG 0
+
+#if SLAB_DEBUG
 // Debug printing helpers
 static void slab_print_string(const char *str) {
     uart_puts(str);
@@ -26,9 +30,6 @@ static void slab_print_hex(uint64_t num) {
     uart_puthex(num);
 }
 
-// Debug printing
-#define SLAB_DEBUG 1
-#if SLAB_DEBUG
 #define slab_debug(msg) slab_print_string("[SLAB] " msg)
 #else
 #define slab_debug(msg)
@@ -371,10 +372,17 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj) {
     cache->stats.active_objs--;
     
     // Move slab between lists if needed
-    if (slab->num_free == 1 && node == &cache->full_slabs) {
-        // Was full, now partial
-        SLAB_LIST_REMOVE(&slab->slab_link);
-        SLAB_LIST_INSERT_HEAD(&cache->partial_slabs, &slab->slab_link);
+    if (slab->num_free == 1) {
+        // Check if this slab was in the full list
+        struct slab_list_node *check_node;
+        for (check_node = cache->full_slabs.next; check_node != &cache->full_slabs; check_node = check_node->next) {
+            if ((struct kmem_slab *)check_node == slab) {
+                // Was full, now partial
+                SLAB_LIST_REMOVE(&slab->slab_link);
+                SLAB_LIST_INSERT_HEAD(&cache->partial_slabs, &slab->slab_link);
+                break;
+            }
+        }
     } else if (slab->num_free == slab->num_objects) {
         // Now empty
         SLAB_LIST_REMOVE(&slab->slab_link);
