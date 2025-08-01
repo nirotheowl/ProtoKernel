@@ -1,4 +1,4 @@
-A 64-bit ARM (AArch64) kernel project for educational and experimental purposes.
+A 64-bit ARM kernel project for educational and experimental purposes. The name might change.
 
 ## Prerequisites
 
@@ -11,13 +11,9 @@ sudo apt update
 sudo apt install \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
-    binutils-aarch64-linux-gnu \
-    qemu-system-arm \
-    make \
     gdb-multiarch \
-    git \
-    python3 \
-    device-tree-compiler
+    qemu-system-arm \
+    make
 ```
 
 ### Arch Linux
@@ -27,12 +23,9 @@ Install the required packages:
 ```bash
 sudo pacman -S \
     aarch64-linux-gnu-gcc \
+    aarch64-linux-gnu-gdb \
     qemu-full \
-    make \
-    gdb \
-    git \
-    python \
-    dtc
+    make 
 ```
 
 ## Building and Running
