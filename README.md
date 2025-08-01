@@ -8,7 +8,7 @@ Install the required packages:
 
 ```bash
 sudo apt update
-sudo apt install -y \
+sudo apt install \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
     qemu-system-arm \
