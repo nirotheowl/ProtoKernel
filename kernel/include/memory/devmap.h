@@ -1,12 +1,12 @@
 /*
- * kernel/include/platform/devmap.h
+ * kernel/include/memory/devmap.h
  *
- * Platform-specific device memory mapping infrastructure
- * Allows different hardware platforms to specify their device memory layouts
+ * Device memory mapping infrastructure
+ * Manages virtual address mappings for device MMIO regions
  */
 
-#ifndef __PLATFORM_DEVMAP_H__
-#define __PLATFORM_DEVMAP_H__
+#ifndef __MEMORY_DEVMAP_H__
+#define __MEMORY_DEVMAP_H__
 
 #include <stdint.h>
 #include <stddef.h>
@@ -63,4 +63,4 @@ int devmap_map_all_devices(void);
 void platform_register(const platform_desc_t *platform);
 const platform_desc_t* platform_get_current(void);
 
-#endif /* __PLATFORM_DEVMAP_H__ */
+#endif /* __MEMORY_DEVMAP_H__ */

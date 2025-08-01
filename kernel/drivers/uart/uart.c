@@ -1,6 +1,6 @@
 #include <uart.h>
 #include <stddef.h>
-#include <platform/devmap.h>
+#include <memory/devmap.h>
 #include <device/device.h>
 #include <device/resource.h>
 

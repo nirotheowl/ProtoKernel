@@ -4,7 +4,7 @@
  * Platform support for ODroid-M2 (Rockchip RK3588S)
  */
 
-#include <platform/devmap.h>
+#include <memory/devmap.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <device/device.h>

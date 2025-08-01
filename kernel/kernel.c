@@ -9,7 +9,7 @@
 #include <drivers/fdt.h>
 #include <drivers/fdt_mgr.h>
 #include <memory/vmm.h>
-#include <platform/devmap.h>
+#include <memory/devmap.h>
 #include <device/device.h>
 // #include <tests/mmu_tests.h>
 // #include <tests/pmm_tests.h>

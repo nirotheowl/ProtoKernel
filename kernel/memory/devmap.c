@@ -5,9 +5,10 @@
  * Manages platform-specific device mappings in kernel virtual address space
  */
 
-#include <platform/devmap.h>
+#include <memory/devmap.h>
 #include <memory/vmm.h>
 #include <memory/vmparam.h>
+#include <memory/pmm.h>
 #include <uart.h>
 #include <string.h>
 #include <stddef.h>
@@ -15,18 +16,19 @@
 #include <device/resource.h>
 
 /* Device mapping configuration */
-/* FIXME: Max entries is probably too small */ 
-#define DEVMAP_MAX_ENTRIES      64
+#define DEVMAP_MAX_ENTRIES      512
 #define DEVMAP_VA_START         0xFFFF000100000000UL  /* Start after kernel space */
 #define DEVMAP_VA_END           0xFFFF000200000000UL  /* 1TB for device mappings */
 
-/* Device mapping table */
-static struct {
+/* Device mapping table entry */
+struct devmap_table_entry {
     devmap_entry_t entry;
     uint64_t allocated_va;
     bool in_use;
-} devmap_table[DEVMAP_MAX_ENTRIES];
+};
 
+/* Device mapping table - dynamically allocated */
+static struct devmap_table_entry *devmap_table = NULL;
 static int devmap_count = 0;
 static uint64_t devmap_next_va = DEVMAP_VA_START;
 static bool devmap_initialized = false;
@@ -53,10 +55,29 @@ void devmap_init(void)
         return;
     }
 
+    /* Allocate device mapping table */
+    size_t table_size = sizeof(struct devmap_table_entry) * DEVMAP_MAX_ENTRIES;
+    size_t pages_needed = (table_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uint64_t phys_addr = pmm_alloc_pages(pages_needed);
+    
+    if (phys_addr == 0) {
+        uart_puts("DEVMAP: Failed to allocate memory for device table\n");
+        return;
+    }
+    
+    /* Map the allocated pages using DMAP */
+    devmap_table = (struct devmap_table_entry *)PHYS_TO_DMAP(phys_addr);
+    
     /* Clear device mapping table */
-    memset(devmap_table, 0, sizeof(devmap_table));
+    memset(devmap_table, 0, table_size);
     devmap_count = 0;
     devmap_next_va = DEVMAP_VA_START;
+    
+    uart_puts("DEVMAP: Allocated ");
+    uart_puthex(pages_needed);
+    uart_puts(" pages (");
+    uart_puthex(table_size);
+    uart_puts(" bytes) for device table\n");
 
     /* Detect current platform (still useful for platform-specific behavior) */
     for (int i = 0; platforms[i] != NULL; i++) {

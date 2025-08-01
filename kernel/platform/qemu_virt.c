@@ -4,7 +4,7 @@
  * Platform support for QEMU virt machine (AArch64)
  */
 
-#include <platform/devmap.h>
+#include <memory/devmap.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <device/device.h>
