@@ -21,7 +21,6 @@ u-boot/
 
 # Debug files
 *.log
-core
 *.dump
 
 # Temporary files
