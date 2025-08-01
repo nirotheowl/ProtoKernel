@@ -1,11 +1,11 @@
 /*
- * kernel/include/memory/cache.h
+ * kernel/include/memory/cpu_cache.h
  *
  * ARM64 cache management functions
  */
 
-#ifndef _CACHE_H_
-#define _CACHE_H_
+#ifndef _CPU_CACHE_H_
+#define _CPU_CACHE_H_
 
 #include <stdint.h>
 
@@ -17,4 +17,4 @@ void dcache_clean_invalidate_range(uint64_t start, uint64_t size);
 /* Instruction cache operations */
 void icache_invalidate_all(void);
 
-#endif /* _CACHE_H_ */
+#endif /* _CPU_CACHE_H_ */

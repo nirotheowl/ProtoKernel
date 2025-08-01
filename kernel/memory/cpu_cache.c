@@ -1,5 +1,5 @@
 /*
- * kernel/memory/cache.c
+ * kernel/memory/cpu_cache.c
  *
  * ARM64 cache management functions
  */

@@ -17,6 +17,8 @@
 // #include <tests/fdt_tests.h>
 // #include <tests/fdt_mgr_tests.h>
 // #include <tests/test_dmap.h>
+#include <tests/slab_tests.h>
+#include <tests/slab_edge_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -132,7 +134,11 @@ void kernel_main(void* dtb) {
    
     // KERNEL TESTS START HERE!
 
-    // No tests in here for now. 
+    // Run slab allocator tests
+    run_slab_tests();
+    
+    // Run comprehensive edge case tests
+    run_slab_edge_tests(); 
     
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");
