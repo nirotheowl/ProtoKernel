@@ -125,6 +125,9 @@ void kernel_main(void* dtb) {
     // Print device mappings
     devmap_print_mappings();
     
+    // Print the device tree
+    // device_print_tree(NULL, 0);
+    
     // Print memory statistics
     pmm_print_stats();
     
