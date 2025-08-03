@@ -13,26 +13,6 @@
 #include <string.h>
 #include <uart.h>
 
-/* Simple snprintf implementation for kernel use */
-static int snprintf(char *buf, size_t size, const char *fmt, ...) {
-    size_t i = 0;
-    const char *p = fmt;
-    
-    while (*p && i < size - 1) {
-        if (*p == '%' && *(p + 1) == 'd') {
-            /* Handle %d - for now just append a number */
-            if (i + 2 < size - 1) {
-                buf[i++] = '0';  /* Simplified - just use 0 */
-            }
-            p += 2;
-        } else {
-            buf[i++] = *p++;
-        }
-    }
-    
-    buf[i] = '\0';
-    return i;
-}
 
 /* Forward declarations */
 extern char *device_pool_strdup(const char *str);

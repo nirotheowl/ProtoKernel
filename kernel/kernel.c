@@ -19,6 +19,8 @@
 // #include <tests/test_dmap.h>
 // #include <tests/slab_tests.h>
 // #include <tests/slab_edge_tests.h>
+// #include <tests/slab_destruction_tests.h>
+// #include <tests/kmalloc_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -141,7 +143,13 @@ void kernel_main(void* dtb) {
     // run_slab_tests();
     
     // Run comprehensive edge case tests
-    // run_slab_edge_tests(); 
+    // run_slab_edge_tests();
+    
+    // Run slab destruction tests first
+    // run_slab_destruction_tests();
+    
+    // Run kmalloc tests
+    // run_kmalloc_tests(); 
     
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");

@@ -104,6 +104,11 @@ void kmem_cache_reap(void);
 void kmem_cache_dump(struct kmem_cache *cache);
 void kmem_dump_all_caches(void);
 
+// Helper functions for kmalloc
+struct kmem_slab *kmem_cache_find_slab(struct kmem_cache *cache, void *obj);
+int kmem_cache_contains(struct kmem_cache *cache, void *obj);
+struct kmem_cache *kmem_find_cache_for_object(void *obj);
+
 // Helper macros for list operations
 #define SLAB_LIST_INIT(head) do { \
     (head)->next = (struct slab_list_node *)(head); \
