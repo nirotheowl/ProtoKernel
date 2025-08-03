@@ -337,8 +337,8 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj) {
     // Search in full slabs
     for (node = cache->full_slabs.next; node != &cache->full_slabs; node = node->next) {
         struct kmem_slab *s = (struct kmem_slab *)node;
-        if (obj >= s->slab_base && obj < (char *)s->slab_base + 
-            (s->num_objects * cache->object_size)) {
+        size_t object_area_size = s->num_objects * cache->object_size;
+        if (obj >= s->slab_base && obj < (char *)s->slab_base + object_area_size) {
             slab = s;
             break;
         }
@@ -394,7 +394,10 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj) {
             // Keep at least one empty slab
             if (!SLAB_LIST_EMPTY(&cache->empty_slabs) && 
                 cache->empty_slabs.next->next != &cache->empty_slabs) {
-                slab_destroy(slab);
+                // Destroy the SECOND empty slab (not the one we just added)
+                struct kmem_slab *slab_to_destroy = (struct kmem_slab *)cache->empty_slabs.next->next;
+                SLAB_LIST_REMOVE(&slab_to_destroy->slab_link);
+                slab_destroy(slab_to_destroy);
             }
         }
     }
@@ -437,12 +440,32 @@ void kmem_cache_dump(struct kmem_cache *cache) {
     int full = 0, partial = 0, empty = 0;
     struct slab_list_node *node;
     
-    for (node = cache->full_slabs.next; node != &cache->full_slabs; node = node->next)
+    // Count full slabs
+    for (node = cache->full_slabs.next; node != &cache->full_slabs; node = node->next) {
         full++;
-    for (node = cache->partial_slabs.next; node != &cache->partial_slabs; node = node->next)
+        if (full > 100) {
+            uart_puts("  ERROR: Too many full slabs, list corrupted!\n");
+            break;
+        }
+    }
+    
+    // Count partial slabs
+    for (node = cache->partial_slabs.next; node != &cache->partial_slabs; node = node->next) {
         partial++;
-    for (node = cache->empty_slabs.next; node != &cache->empty_slabs; node = node->next)
+        if (partial > 100) {
+            uart_puts("  ERROR: Too many partial slabs, list corrupted!\n");
+            break;
+        }
+    }
+    
+    // Count empty slabs
+    for (node = cache->empty_slabs.next; node != &cache->empty_slabs; node = node->next) {
         empty++;
+        if (empty > 100) {
+            uart_puts("  ERROR: Too many empty slabs, list corrupted!\n");
+            break;
+        }
+    }
     
     uart_puts("  Slab lists: ");
     uart_putdec(full);
@@ -476,4 +499,80 @@ void kmem_dump_all_caches(void) {
 void kmem_cache_reap(void) {
     // TODO: Implement cache reaping
     // For now, this is a no-op
+}
+
+// Find which slab contains an object
+struct kmem_slab *kmem_cache_find_slab(struct kmem_cache *cache, void *obj) {
+    if (!cache || !obj) return NULL;
+    
+    struct slab_list_node *node;
+    
+    // Check all slab lists
+    struct slab_list_node *lists[] = {
+        &cache->full_slabs,
+        &cache->partial_slabs,
+        &cache->empty_slabs
+    };
+    
+    for (int i = 0; i < 3; i++) {
+        int slab_count = 0;
+        for (node = lists[i]->next; node != lists[i]; node = node->next) {
+            slab_count++;
+            if (slab_count > 100) {
+                return NULL;
+            }
+            
+            struct kmem_slab *slab = (struct kmem_slab *)node;
+            
+            // Validate slab structure
+            if (!slab->cache) {
+                continue;
+            }
+            
+            // Check if object is within this slab's object area
+            // Note: We need to check against the actual object area, not the entire slab
+            size_t object_area_size = slab->num_objects * cache->object_size;
+            if (obj >= slab->slab_base && 
+                obj < (char *)slab->slab_base + object_area_size) {
+                return slab;
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+// Check if a cache contains an object
+int kmem_cache_contains(struct kmem_cache *cache, void *obj) {
+    return kmem_cache_find_slab(cache, obj) != NULL;
+}
+
+// Find which cache owns an object (for kmalloc)
+struct kmem_cache *kmem_find_cache_for_object(void *obj) {
+    if (!obj || !slab_initialized) {
+        return NULL;
+    }
+    
+    struct slab_list_node *node;
+    int cache_count = 0;
+    
+    // Walk through all caches
+    for (node = cache_list.next; node != &cache_list; node = node->next) {
+        cache_count++;
+        
+        // Safety check to prevent infinite loops
+        if (cache_count > 100) {
+            return NULL;
+        }
+        
+        // Get the cache from the list node using container_of pattern
+        struct kmem_cache *cache = (struct kmem_cache *)((char *)node - offsetof(struct kmem_cache, cache_link));
+        
+        // Check if this cache contains the object
+        if (kmem_cache_contains(cache, obj)) {
+            return cache;
+        }
+    }
+    
+    return NULL;
 }
