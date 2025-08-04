@@ -21,6 +21,7 @@
 // #include <tests/slab_edge_tests.h>
 // #include <tests/slab_destruction_tests.h>
 // #include <tests/kmalloc_tests.h>
+#include <tests/malloc_types_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -150,6 +151,9 @@ void kernel_main(void* dtb) {
     
     // Run kmalloc tests
     // run_kmalloc_tests(); 
+    
+    // Run malloc type tests
+    run_malloc_types_tests();
     
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");

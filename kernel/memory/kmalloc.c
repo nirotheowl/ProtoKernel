@@ -10,6 +10,7 @@
 #include <memory/pmm.h>
 #include <memory/vmparam.h>
 #include <memory/vmm.h>
+#include <memory/malloc_types.h>
 #include <uart.h>
 #include <string.h>
 
@@ -35,6 +36,9 @@ void kmalloc_init(void) {
         kmalloc_debug("Already initialized\n");
         return;
     }
+    
+    // Initialize malloc type system first
+    malloc_type_init();
     
     // Make sure slab allocator is initialized
     kmem_init();
@@ -77,7 +81,7 @@ struct kmem_cache *kmalloc_find_cache(void *ptr) {
     return kmem_find_cache_for_object(ptr);
 }
 
-// Main allocation function - ZERO OVERHEAD for slab allocations
+// Main allocation function 
 void *kmalloc(size_t size, int flags) {
     if (!kmalloc_initialized) {
         kmalloc_init();
@@ -339,15 +343,53 @@ int kmalloc_validate(void *ptr) {
     return header->magic == KMALLOC_LARGE_MAGIC;
 }
 
-// Typed allocation stubs (for Phase 3)
+// Typed allocation functions
 void *kmalloc_type(size_t size, struct malloc_type *type, int flags) {
-    // For now, just call regular kmalloc
-    return kmalloc(size, flags);
+    void *ptr;
+    
+    // Use default type if none specified
+    if (!type) {
+        type = &M_KMALLOC;
+    }
+    
+    // Allocate memory
+    ptr = kmalloc(size, flags);
+    
+    // Update type statistics on success
+    if (ptr) {
+        malloc_type_update_alloc(type, size);
+    } else {
+        // Update failed allocation count
+        if (type) {
+            type->stats.failed_allocs++;
+        }
+    }
+    
+    return ptr;
 }
 
 void kfree_type(void *ptr, struct malloc_type *type) {
-    // For now, just call regular kfree
+    size_t size;
+    
+    if (!ptr) {
+        return;
+    }
+    
+    // Use default type if none specified (same as kmalloc_type)
+    if (!type) {
+        type = &M_KMALLOC;
+    }
+    
+    // Get the size before freeing
+    size = kmalloc_size(ptr);
+    
+    // Free the memory
     kfree(ptr);
+    
+    // Update type statistics
+    if (type && size > 0) {
+        malloc_type_update_free(type, size);
+    }
 }
 
 // Get statistics
@@ -385,4 +427,7 @@ void kmalloc_dump_stats(void) {
             kmem_cache_dump(size_caches[i]);
         }
     }
+    
+    // Dump malloc type statistics
+    malloc_type_dump_stats();
 }

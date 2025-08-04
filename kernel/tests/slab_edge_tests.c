@@ -16,7 +16,7 @@ static int tests_passed = 0;
 static int tests_failed = 0;
 
 #define TEST_START(name) do { \
-    uart_puts("\n[EDGE TEST] "); \
+    uart_puts("[EDGE TEST] "); \
     uart_puts(name); \
     uart_puts(" ... "); \
     tests_run++; \
