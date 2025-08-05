@@ -69,6 +69,7 @@ struct kmem_cache {
 #define KMEM_CACHE_NOCPU      0x0001  // No per-CPU optimization
 #define KMEM_CACHE_NODEBUG    0x0002  // No debugging features
 #define KMEM_CACHE_NOREAP     0x0004  // Don't reap empty slabs
+#define KMEM_CACHE_NOTRACK    0x0008  // Don't track in slab lookup (internal use)
 
 // Allocation flags
 #define KM_SLEEP      0x0001  // Can block/sleep

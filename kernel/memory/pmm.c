@@ -228,6 +228,7 @@ uint64_t pmm_alloc_page(void) {
                 page_ptr[j] = 0;
             }
             
+            
             return pa;
         }
     }
@@ -248,6 +249,7 @@ uint64_t pmm_alloc_page_table(void) {
 uint64_t pmm_alloc_pages(size_t count) {
     if (count == 0) return 0;
     if (count == 1) return pmm_alloc_page();
+    
     
     // Find contiguous free pages
     uint64_t start = 0;
