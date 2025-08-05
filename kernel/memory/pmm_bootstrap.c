@@ -1,7 +1,13 @@
+/*
+ * kernel/memory/pmm_bootstrap.c
+ *
+ * Bootstrap physical memory allocator for early kernel initialization
+ */
+
 #include <memory/pmm_bootstrap.h>
 #include <uart.h>
 
-/* PMM bootstrap allocator state */
+// PMM bootstrap allocator state
 static struct {
     uint64_t start;
     uint64_t current;
@@ -10,7 +16,7 @@ static struct {
 } pmm_bootstrap_state = {0};
 
 void pmm_bootstrap_init(uint64_t start_addr, uint64_t end_addr) {
-    /* Align start to page boundary */
+    // Align start to page boundary
     start_addr = (start_addr + 0xFFF) & ~0xFFF;
     
     pmm_bootstrap_state.start = start_addr;
@@ -31,13 +37,13 @@ void pmm_bootstrap_init(uint64_t start_addr, uint64_t end_addr) {
 uint64_t pmm_bootstrap_alloc(size_t size, size_t alignment) {
     if (size == 0) return 0;
     
-    /* Default alignment is 8 bytes */
+    // Default alignment is 8 bytes
     if (alignment == 0) alignment = 8;
     
-    /* Align current pointer */
+    // Align current pointer
     uint64_t aligned = (pmm_bootstrap_state.current + alignment - 1) & ~(alignment - 1);
     
-    /* Check if we have enough space */
+    // Check if we have enough space
     if (aligned + size > pmm_bootstrap_state.end) {
         uart_puts("ERROR: PMM bootstrap allocator out of memory!\n");
         uart_puts("  Requested: ");
@@ -48,12 +54,12 @@ uint64_t pmm_bootstrap_alloc(size_t size, size_t alignment) {
         return 0;
     }
     
-    /* Update state */
+    // Update state
     uint64_t result = aligned;
     pmm_bootstrap_state.current = aligned + size;
     pmm_bootstrap_state.used += size;
     
-    /* Clear allocated memory */
+    // Clear allocated memory
     uint64_t *ptr = (uint64_t *)result;
     for (size_t i = 0; i < size / sizeof(uint64_t); i++) {
         ptr[i] = 0;

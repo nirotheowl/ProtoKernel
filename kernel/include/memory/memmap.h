@@ -1,3 +1,9 @@
+/*
+ * kernel/include/memory/memmap.h
+ *
+ * Memory region management and memory map interface
+ */
+
 #ifndef MEMMAP_H
 #define MEMMAP_H
 

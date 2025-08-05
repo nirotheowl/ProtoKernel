@@ -1,3 +1,9 @@
+/*
+ * kernel/include/memory/pmm.h
+ *
+ * Physical memory manager interface
+ */
+
 #ifndef PMM_H
 #define PMM_H
 

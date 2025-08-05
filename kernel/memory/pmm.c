@@ -1,3 +1,9 @@
+/*
+ * kernel/memory/pmm.c
+ *
+ * Physical memory manager implementation
+ */
+
 #include <memory/pmm.h>
 #include <memory/vmparam.h>
 #include <memory/vmm.h>

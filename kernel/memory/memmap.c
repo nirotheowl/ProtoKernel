@@ -1,3 +1,9 @@
+/*
+ * kernel/memory/memmap.c
+ *
+ * Memory region management and memory map tracking
+ */
+
 #include <memory/memmap.h>
 #include <memory/vmm.h>
 #include <uart.h>

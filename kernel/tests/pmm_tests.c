@@ -1,3 +1,9 @@
+/*
+ * kernel/tests/pmm_tests.c
+ *
+ * Unit tests for the physical memory manager
+ */
+
 #include <tests/pmm_tests.h>
 #include <memory/pmm.h>
 #include <uart.h>

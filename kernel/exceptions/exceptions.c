@@ -1,3 +1,9 @@
+/*
+ * kernel/exceptions/exceptions.c
+ *
+ * Exception and interrupt handling implementation
+ */
+
 #include <stdint.h>
 #include <exceptions/exceptions.h>
 #include <uart.h>
