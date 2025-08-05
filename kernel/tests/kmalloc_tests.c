@@ -497,9 +497,9 @@ static int test_memory_efficiency(void) {
     kmalloc_get_stats(&stats_after);
     
     // With zero overhead, we should allocate exactly 16 bytes (the size class)
-    // not 128 bytes like before
+    // Statistics now track actual allocated size, not requested size
     uint64_t bytes_used = stats_after.active_bytes - stats_before.active_bytes;
-    ASSERT(bytes_used == 1, "Should track 1 byte for user");
+    ASSERT(bytes_used == 16, "Should track 16 bytes (size class) for 1-byte request");
     
     // Allocate 17 bytes - should use 32-byte size class
     void *ptr2 = kmalloc(17, 0);
@@ -507,7 +507,7 @@ static int test_memory_efficiency(void) {
     
     kmalloc_get_stats(&stats_after);
     bytes_used = stats_after.active_bytes - stats_before.active_bytes;
-    ASSERT(bytes_used == 18, "Should track 18 bytes total");
+    ASSERT(bytes_used == 48, "Should track 48 bytes total (16 + 32)");
     
     kfree(ptr1);
     kfree(ptr2);
