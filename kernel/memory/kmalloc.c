@@ -162,6 +162,9 @@ void *kmalloc(size_t size, int flags) {
         return NULL;
     }
     
+    // Get the actual size that will be allocated
+    size_t actual_size = kmalloc_size_classes[class];
+    
     // Allocate from slab cache - NO HEADER!
     void *obj = kmem_cache_alloc(size_caches[class], flags);
     if (!obj) {
@@ -184,11 +187,11 @@ void *kmalloc(size_t size, int flags) {
         memset(obj, 0, size);
     }
     
-    // Update statistics
+    // Update statistics with actual allocated size
     global_stats.total_allocs++;
     global_stats.active_allocs++;
-    global_stats.total_bytes += size;
-    global_stats.active_bytes += size;
+    global_stats.total_bytes += actual_size;
+    global_stats.active_bytes += actual_size;
     
     // Return pointer directly - no header!
     return obj;
@@ -365,7 +368,9 @@ void *kmalloc_type(size_t size, struct malloc_type *type, int flags) {
     
     // Update type statistics on success
     if (ptr) {
-        malloc_type_update_alloc(type, size);
+        // Get the actual allocated size
+        size_t actual_size = kmalloc_size(ptr);
+        malloc_type_update_alloc(type, actual_size);
     } else {
         // Update failed allocation count
         if (type) {
