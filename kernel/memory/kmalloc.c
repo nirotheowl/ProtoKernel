@@ -11,6 +11,7 @@
 #include <memory/vmparam.h>
 #include <memory/vmm.h>
 #include <memory/malloc_types.h>
+#include <memory/slab_lookup.h>
 #include <uart.h>
 #include <string.h>
 
@@ -36,6 +37,9 @@ void kmalloc_init(void) {
         kmalloc_debug("Already initialized\n");
         return;
     }
+    
+    // Initialize hash table for slab lookups (uses PMM bootstrap)
+    slab_lookup_init();
     
     // Initialize malloc type system first
     malloc_type_init();
@@ -71,7 +75,12 @@ void kmalloc_init(void) {
         }
     }
     
+    // Mark as initialized BEFORE migration to prevent recursion
     kmalloc_initialized = 1;
+    
+    // NOW kmalloc is functional - migrate hash table to dynamic memory
+    slab_lookup_migrate_to_dynamic();
+    
     kmalloc_debug("Kmalloc initialized with zero-overhead design\n");
 }
 

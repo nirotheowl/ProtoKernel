@@ -17,11 +17,12 @@
 // #include <tests/fdt_tests.h>
 // #include <tests/fdt_mgr_tests.h>
 // #include <tests/test_dmap.h>
-// #include <tests/slab_tests.h>
-// #include <tests/slab_edge_tests.h>
-// #include <tests/slab_destruction_tests.h>
-// #include <tests/kmalloc_tests.h>
+#include <tests/slab_tests.h>
+#include <tests/slab_edge_tests.h>
+#include <tests/slab_destruction_tests.h>
+#include <tests/kmalloc_tests.h>
 #include <tests/malloc_types_tests.h>
+#include <tests/slab_lookup_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -141,19 +142,22 @@ void kernel_main(void* dtb) {
     // KERNEL TESTS START HERE!
 
     // Run slab allocator tests
-    // run_slab_tests();
+    run_slab_tests();
     
     // Run comprehensive edge case tests
-    // run_slab_edge_tests();
+    run_slab_edge_tests();
     
     // Run slab destruction tests first
-    // run_slab_destruction_tests();
+    run_slab_destruction_tests();
     
     // Run kmalloc tests
-    // run_kmalloc_tests(); 
+    run_kmalloc_tests(); 
     
     // Run malloc type tests
     run_malloc_types_tests();
+    
+    // Run slab lookup tests
+    run_slab_lookup_tests();
     
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");

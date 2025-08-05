@@ -9,6 +9,7 @@
 #include <memory/pmm.h>
 #include <memory/vmparam.h>
 #include <memory/vmm.h>
+#include <memory/slab_lookup.h>
 #include <uart.h>
 #include <string.h>
 #include <stddef.h>
@@ -153,6 +154,11 @@ static struct kmem_slab *slab_create(struct kmem_cache *cache) {
     cache->stats.total_slabs++;
     cache->stats.total_objs += cache->objects_per_slab;
     
+    // Add to hash table for fast lookup (unless NOTRACK flag is set)
+    if (!(cache->flags & KMEM_CACHE_NOTRACK)) {
+        slab_lookup_insert(slab);
+    }
+    
     slab_debug("Created slab for cache\n");
     
     return slab;
@@ -161,6 +167,11 @@ static struct kmem_slab *slab_create(struct kmem_cache *cache) {
 // Free a slab back to PMM
 static void slab_destroy(struct kmem_slab *slab) {
     struct kmem_cache *cache = slab->cache;
+    
+    // Remove from hash table before freeing (unless NOTRACK flag is set)
+    if (!(cache->flags & KMEM_CACHE_NOTRACK)) {
+        slab_lookup_remove(slab);
+    }
     
     // Update statistics
     cache->stats.total_slabs--;
@@ -553,26 +564,6 @@ struct kmem_cache *kmem_find_cache_for_object(void *obj) {
         return NULL;
     }
     
-    struct slab_list_node *node;
-    int cache_count = 0;
-    
-    // Walk through all caches
-    for (node = cache_list.next; node != &cache_list; node = node->next) {
-        cache_count++;
-        
-        // Safety check to prevent infinite loops
-        if (cache_count > 100) {
-            return NULL;
-        }
-        
-        // Get the cache from the list node using container_of pattern
-        struct kmem_cache *cache = (struct kmem_cache *)((char *)node - offsetof(struct kmem_cache, cache_link));
-        
-        // Check if this cache contains the object
-        if (kmem_cache_contains(cache, obj)) {
-            return cache;
-        }
-    }
-    
-    return NULL;
+    // Use O(1) hash table lookup instead of O(n*m) search
+    return slab_lookup_find(obj);
 }
