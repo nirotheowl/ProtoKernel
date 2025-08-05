@@ -1,3 +1,9 @@
+/*
+ * kernel/include/exceptions/exceptions.h
+ *
+ * Exception handling constants and interfaces
+ */
+
 #ifndef EXCEPTIONS_H
 #define EXCEPTIONS_H
 

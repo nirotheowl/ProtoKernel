@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-/* Page sizes and constants from paging.h */
+// Page sizes and constants from paging.h
 #define PAGE_SHIFT              12
 #define PAGE_SIZE               (1UL << PAGE_SHIFT)    // 4KB
 #define PAGE_MASK               (~(PAGE_SIZE - 1))

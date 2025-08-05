@@ -1,3 +1,9 @@
+/*
+ * kernel/kernel.c
+ *
+ * Main kernel entry point and initialization
+ */
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>

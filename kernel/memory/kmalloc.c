@@ -2,7 +2,6 @@
  * kernel/memory/kmalloc.c
  *
  * Kernel memory allocator implementation
- * REVISED: Zero-overhead design for slab allocations
  */
 
 #include <memory/kmalloc.h>

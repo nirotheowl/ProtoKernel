@@ -1,3 +1,9 @@
+/*
+ * kernel/include/uart.h
+ *
+ * UART driver interface for serial console output
+ */
+
 #ifndef UART_H
 #define UART_H
 

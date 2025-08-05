@@ -1,3 +1,9 @@
+/*
+ * kernel/include/tests/memory_tests.h
+ *
+ * Memory management edge case tests interface
+ */
+
 #ifndef MEMORY_TESTS_H
 #define MEMORY_TESTS_H
 

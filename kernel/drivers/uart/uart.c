@@ -1,3 +1,9 @@
+/*
+ * kernel/drivers/uart/uart.c
+ *
+ * UART driver implementation for serial console output
+ */
+
 #include <uart.h>
 #include <stddef.h>
 #include <memory/devmap.h>

@@ -1,3 +1,9 @@
+/*
+ * kernel/tests/memory_tests.c
+ *
+ * Comprehensive memory management edge case tests
+ */
+
 #include <tests/memory_tests.h>
 #include <memory/pmm.h>
 #include <memory/memmap.h>

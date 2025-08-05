@@ -1,3 +1,9 @@
+/*
+ * kernel/include/string.h
+ *
+ * String and memory manipulation function declarations
+ */
+
 #ifndef STRING_H
 #define STRING_H
 

@@ -1,4 +1,8 @@
-// String and memory manipulation functions
+/*
+ * kernel/lib/string.c
+ *
+ * String and memory manipulation functions
+ */
 
 #include <stddef.h>
 
