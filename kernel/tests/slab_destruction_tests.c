@@ -58,9 +58,9 @@ static int count_slabs_in_list(struct slab_list_node *head) {
 // Helper to verify all slabs in a list have valid cache pointers
 static int verify_slab_cache_pointers(struct kmem_cache *cache) {
     struct slab_list_node *lists[] = {
-        &cache->full_slabs,
-        &cache->partial_slabs,
-        &cache->empty_slabs
+        &cache->warm.full_slabs,
+        &cache->hot.partial_slabs,
+        &cache->warm.empty_slabs
     };
     const char *list_names[] = {"full", "partial", "empty"};
     
@@ -93,12 +93,12 @@ static int test_empty_slab_destruction(void) {
     
     // Allocate objects to create multiple slabs
     void *objs[200];
-    int num_objs = cache->objects_per_slab * 2 + 10; // Ensure we need at least 3 slabs
+    int num_objs = cache->hot.objects_per_slab * 2 + 10; // Ensure we need at least 3 slabs
     
     uart_puts("  Allocating ");
     uart_putdec(num_objs);
     uart_puts(" objects (");
-    uart_putdec(cache->objects_per_slab);
+    uart_putdec(cache->hot.objects_per_slab);
     uart_puts(" per slab)\n");
     
     for (int i = 0; i < num_objs; i++) {
@@ -113,12 +113,12 @@ static int test_empty_slab_destruction(void) {
     
     // Free all objects from one slab
     uart_puts("  Freeing first slab worth of objects\n");
-    for (int i = 0; i < cache->objects_per_slab; i++) {
+    for (int i = 0; i < cache->hot.objects_per_slab; i++) {
         kmem_cache_free(cache, objs[i]);
     }
     
     // Check that we have one empty slab
-    int empty_count = count_slabs_in_list(&cache->empty_slabs);
+    int empty_count = count_slabs_in_list(&cache->warm.empty_slabs);
     uart_puts("  Empty slabs after first batch free: ");
     uart_putdec(empty_count);
     uart_puts("\n");
@@ -126,12 +126,12 @@ static int test_empty_slab_destruction(void) {
     
     // Free more objects to create second empty slab
     uart_puts("  Freeing second slab worth of objects\n");
-    for (int i = cache->objects_per_slab; i < cache->objects_per_slab * 2; i++) {
+    for (int i = cache->hot.objects_per_slab; i < cache->hot.objects_per_slab * 2; i++) {
         kmem_cache_free(cache, objs[i]);
     }
     
     // Should still have only one empty slab (second should be destroyed)
-    empty_count = count_slabs_in_list(&cache->empty_slabs);
+    empty_count = count_slabs_in_list(&cache->warm.empty_slabs);
     uart_puts("  Empty slabs after second batch free: ");
     uart_putdec(empty_count);
     uart_puts("\n");
@@ -141,7 +141,7 @@ static int test_empty_slab_destruction(void) {
     ASSERT(verify_slab_cache_pointers(cache), "Cache pointers corrupted");
     
     // Clean up
-    for (int i = cache->objects_per_slab * 2; i < num_objs; i++) {
+    for (int i = cache->hot.objects_per_slab * 2; i < num_objs; i++) {
         kmem_cache_free(cache, objs[i]);
     }
     kmem_cache_destroy(cache);
@@ -180,7 +180,7 @@ static int test_rapid_alloc_free_cycles(void) {
         ASSERT(verify_slab_cache_pointers(cache), "Cache pointers corrupted");
         
         // Check that we don't accumulate empty slabs
-        int empty_count = count_slabs_in_list(&cache->empty_slabs);
+        int empty_count = count_slabs_in_list(&cache->warm.empty_slabs);
         uart_puts("    Empty slabs: ");
         uart_putdec(empty_count);
         uart_puts("\n");
@@ -201,7 +201,7 @@ static int test_noreap_flag(void) {
     
     // Allocate objects to create multiple slabs
     void *objs[200];
-    int num_objs = cache->objects_per_slab * 3;
+    int num_objs = cache->hot.objects_per_slab * 3;
     
     for (int i = 0; i < num_objs; i++) {
         objs[i] = kmem_cache_alloc(cache, 0);
@@ -218,7 +218,7 @@ static int test_noreap_flag(void) {
     }
     
     // With NOREAP, all slabs should remain as empty slabs
-    int empty_count = count_slabs_in_list(&cache->empty_slabs);
+    int empty_count = count_slabs_in_list(&cache->warm.empty_slabs);
     uart_puts("  Empty slabs with NOREAP: ");
     uart_putdec(empty_count);
     uart_puts("\n");
@@ -271,7 +271,7 @@ static int test_mixed_patterns(void) {
     ASSERT(verify_slab_cache_pointers(cache), "Cache pointers corrupted");
     ASSERT(cache->stats.active_objs == 0, "Objects leaked");
     
-    int empty_count = count_slabs_in_list(&cache->empty_slabs);
+    int empty_count = count_slabs_in_list(&cache->warm.empty_slabs);
     uart_puts("  Final empty slabs: ");
     uart_putdec(empty_count);
     uart_puts("\n");

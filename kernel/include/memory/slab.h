@@ -43,27 +43,45 @@ struct kmem_slab {
     struct kmem_cache *cache;         // Parent cache
 };
 
-// Slab cache structure - manages slabs of a specific object size
+// Cache line size for ARM64 (typical)
+#define CACHE_LINE_SIZE 64
+
+// Slab cache structure - optimized for cache line alignment
+// Organized into hot, warm, and cold cache lines for better performance
 struct kmem_cache {
-    struct slab_list_node cache_link;     // Link in global cache list
-    char name[32];                    // Cache name
-    size_t object_size;               // Size of each object
-    size_t align;                     // Alignment requirement
-    uint32_t objects_per_slab;        // Objects per slab
-    uint32_t flags;                   // Cache flags
+    // Hot fields - frequently accessed together (64 bytes)
+    union {
+        struct {
+            struct slab_list_node partial_slabs;  // 16 bytes - most accessed list
+            size_t object_size;                    // 8 bytes
+            size_t align;                          // 8 bytes
+            uint32_t objects_per_slab;             // 4 bytes
+            uint32_t flags;                        // 4 bytes
+            void *reserved1;                       // 8 bytes (future: lock)
+            void *reserved2;                       // 8 bytes
+            uint32_t reserved3;                    // 4 bytes
+            uint32_t reserved4;                    // 4 bytes
+        } hot;
+        char _cache_line_1[CACHE_LINE_SIZE];
+    };
     
-    // Slab lists
-    struct slab_list_node full_slabs;    // Fully allocated slabs
-    struct slab_list_node partial_slabs;  // Partially full slabs
-    struct slab_list_node empty_slabs;    // Empty slabs
+    // Warm fields - less frequently accessed (64 bytes)
+    union {
+        struct {
+            struct slab_list_node cache_link;      // 16 bytes
+            struct slab_list_node full_slabs;      // 16 bytes
+            struct slab_list_node empty_slabs;     // 16 bytes
+            char name[16];                         // 16 bytes (reduced from 32)
+        } warm;
+        char _cache_line_2[CACHE_LINE_SIZE];
+    };
     
-    // Statistics
-    struct kmem_stats stats;          // Cache statistics
-    
-    // Constructor/destructor (future enhancement)
-    void (*ctor)(void *obj);          // Object constructor
-    void (*dtor)(void *obj);          // Object destructor
-};
+    // Cold fields - rarely accessed (variable size, aligned)
+    struct kmem_stats stats;               // Statistics
+    void (*ctor)(void *obj);              // Object constructor
+    void (*dtor)(void *obj);              // Object destructor
+    char name_overflow[16];               // Extra space for longer names
+} __attribute__((aligned(CACHE_LINE_SIZE)));
 
 // Cache flags
 #define KMEM_CACHE_NOCPU      0x0001  // No per-CPU optimization
