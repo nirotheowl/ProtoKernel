@@ -52,12 +52,12 @@ static inline size_t align_up(size_t value, size_t align) {
 
 // Helper function to get object address from index
 static inline void *slab_get_object(struct kmem_slab *slab, uint32_t index) {
-    return (char *)slab->slab_base + (index * slab->cache->object_size);
+    return (char *)slab->slab_base + (index * slab->cache->hot.object_size);
 }
 
 // Helper function to get object index from address
 static inline uint32_t slab_get_index(struct kmem_slab *slab, void *obj) {
-    return ((char *)obj - (char *)slab->slab_base) / slab->cache->object_size;
+    return ((char *)obj - (char *)slab->slab_base) / slab->cache->hot.object_size;
 }
 
 // Initialize the slab allocator subsystem
@@ -75,7 +75,7 @@ void kmem_init(void) {
 
 // Calculate optimal slab size and objects per slab
 static void calculate_slab_parameters(struct kmem_cache *cache) {
-    size_t obj_size = cache->object_size;
+    size_t obj_size = cache->hot.object_size;
     size_t slab_size = MIN_SLAB_SIZE;
     
     // Start with minimum slab size and increase if needed
@@ -83,7 +83,7 @@ static void calculate_slab_parameters(struct kmem_cache *cache) {
         // Calculate space needed for slab header and alignment padding
         size_t metadata_size = sizeof(struct kmem_slab);
         // Account for worst-case alignment padding
-        metadata_size = align_up(metadata_size, cache->align);
+        metadata_size = align_up(metadata_size, cache->hot.align);
         size_t available = slab_size - metadata_size;
         
         // Calculate how many objects fit
@@ -91,7 +91,7 @@ static void calculate_slab_parameters(struct kmem_cache *cache) {
         
         // We want at least 8 objects per slab for efficiency
         if (num_objs >= 8) {
-            cache->objects_per_slab = num_objs;
+            cache->hot.objects_per_slab = num_objs;
             return;
         }
         
@@ -101,9 +101,9 @@ static void calculate_slab_parameters(struct kmem_cache *cache) {
     
     // Use maximum slab size
     size_t metadata_size = sizeof(struct kmem_slab);
-    metadata_size = align_up(metadata_size, cache->align);
+    metadata_size = align_up(metadata_size, cache->hot.align);
     size_t available = MAX_SLAB_SIZE - metadata_size;
-    cache->objects_per_slab = available / (obj_size + sizeof(uint32_t));
+    cache->hot.objects_per_slab = available / (obj_size + sizeof(uint32_t));
 }
 
 // Allocate and initialize a new slab
@@ -111,8 +111,8 @@ static struct kmem_slab *slab_create(struct kmem_cache *cache) {
     // Calculate slab size
     size_t slab_size = MIN_SLAB_SIZE;
     size_t needed = sizeof(struct kmem_slab) + 
-                   (cache->objects_per_slab * cache->object_size) +
-                   (cache->objects_per_slab * sizeof(uint32_t));
+                   (cache->hot.objects_per_slab * cache->hot.object_size) +
+                   (cache->hot.objects_per_slab * sizeof(uint32_t));
     
     while (slab_size < needed && slab_size < MAX_SLAB_SIZE) {
         slab_size *= 2;
@@ -133,29 +133,29 @@ static struct kmem_slab *slab_create(struct kmem_cache *cache) {
     struct kmem_slab *slab = (struct kmem_slab *)slab_mem;
     // Align slab_base according to cache alignment requirement
     void *base_addr = (char *)slab_mem + sizeof(struct kmem_slab);
-    slab->slab_base = (void *)align_up((uintptr_t)base_addr, cache->align);
+    slab->slab_base = (void *)align_up((uintptr_t)base_addr, cache->hot.align);
     slab->slab_size = slab_size;
-    slab->num_objects = cache->objects_per_slab;
-    slab->num_free = cache->objects_per_slab;
+    slab->num_objects = cache->hot.objects_per_slab;
+    slab->num_free = cache->hot.objects_per_slab;
     slab->cache = cache;
     
     // Initialize freelist at the end of objects
     slab->freelist = (uint32_t *)((char *)slab->slab_base + 
-                                  (cache->objects_per_slab * cache->object_size));
+                                  (cache->hot.objects_per_slab * cache->hot.object_size));
     
     // Initialize freelist as a linked list of indices
-    for (uint32_t i = 0; i < cache->objects_per_slab; i++) {
+    for (uint32_t i = 0; i < cache->hot.objects_per_slab; i++) {
         slab->freelist[i] = i + 1;
     }
-    slab->freelist[cache->objects_per_slab - 1] = 0xFFFFFFFF; // End marker
+    slab->freelist[cache->hot.objects_per_slab - 1] = 0xFFFFFFFF; // End marker
     slab->freelist_head = 0;
     
     // Update cache statistics
     cache->stats.total_slabs++;
-    cache->stats.total_objs += cache->objects_per_slab;
+    cache->stats.total_objs += cache->hot.objects_per_slab;
     
     // Add to hash table for fast lookup (unless NOTRACK flag is set)
-    if (!(cache->flags & KMEM_CACHE_NOTRACK)) {
+    if (!(cache->hot.flags & KMEM_CACHE_NOTRACK)) {
         slab_lookup_insert(slab);
     }
     
@@ -169,7 +169,7 @@ static void slab_destroy(struct kmem_slab *slab) {
     struct kmem_cache *cache = slab->cache;
     
     // Remove from hash table before freeing (unless NOTRACK flag is set)
-    if (!(cache->flags & KMEM_CACHE_NOTRACK)) {
+    if (!(cache->hot.flags & KMEM_CACHE_NOTRACK)) {
         slab_lookup_remove(slab);
     }
     
@@ -215,21 +215,21 @@ struct kmem_cache *kmem_cache_create(const char *name, size_t size,
     
     // Initialize cache
     memset(cache, 0, sizeof(*cache));
-    strncpy(cache->name, name, sizeof(cache->name) - 1);
-    cache->object_size = size;
-    cache->align = align;
-    cache->flags = flags;
+    strncpy(cache->warm.name, name, sizeof(cache->warm.name) - 1);
+    cache->hot.object_size = size;
+    cache->hot.align = align;
+    cache->hot.flags = flags;
     
     // Initialize lists
-    SLAB_LIST_INIT(&cache->full_slabs);
-    SLAB_LIST_INIT(&cache->partial_slabs);
-    SLAB_LIST_INIT(&cache->empty_slabs);
+    SLAB_LIST_INIT(&cache->warm.full_slabs);
+    SLAB_LIST_INIT(&cache->hot.partial_slabs);
+    SLAB_LIST_INIT(&cache->warm.empty_slabs);
     
     // Calculate slab parameters
     calculate_slab_parameters(cache);
     
     // Add to global cache list
-    SLAB_LIST_INSERT_HEAD(&cache_list, &cache->cache_link);
+    SLAB_LIST_INSERT_HEAD(&cache_list, &cache->warm.cache_link);
     
     slab_debug("Created cache\n");
     
@@ -246,7 +246,7 @@ void kmem_cache_destroy(struct kmem_cache *cache) {
     struct slab_list_node *node, *next;
     
     // Free full slabs
-    for (node = cache->full_slabs.next; node != &cache->full_slabs; node = next) {
+    for (node = cache->warm.full_slabs.next; node != &cache->warm.full_slabs; node = next) {
         next = node->next;
         struct kmem_slab *slab = (struct kmem_slab *)node;
         SLAB_LIST_REMOVE(node);
@@ -254,7 +254,7 @@ void kmem_cache_destroy(struct kmem_cache *cache) {
     }
     
     // Free partial slabs
-    for (node = cache->partial_slabs.next; node != &cache->partial_slabs; node = next) {
+    for (node = cache->hot.partial_slabs.next; node != &cache->hot.partial_slabs; node = next) {
         next = node->next;
         struct kmem_slab *slab = (struct kmem_slab *)node;
         SLAB_LIST_REMOVE(node);
@@ -262,7 +262,7 @@ void kmem_cache_destroy(struct kmem_cache *cache) {
     }
     
     // Free empty slabs
-    for (node = cache->empty_slabs.next; node != &cache->empty_slabs; node = next) {
+    for (node = cache->warm.empty_slabs.next; node != &cache->warm.empty_slabs; node = next) {
         next = node->next;
         struct kmem_slab *slab = (struct kmem_slab *)node;
         SLAB_LIST_REMOVE(node);
@@ -270,7 +270,7 @@ void kmem_cache_destroy(struct kmem_cache *cache) {
     }
     
     // Remove from global cache list
-    SLAB_LIST_REMOVE(&cache->cache_link);
+    SLAB_LIST_REMOVE(&cache->warm.cache_link);
     
     // Free cache structure
     uint64_t cache_phys = DMAP_TO_PHYS((uint64_t)cache);
@@ -284,14 +284,14 @@ void *kmem_cache_alloc(struct kmem_cache *cache, int flags) {
     struct kmem_slab *slab = NULL;
     
     // Try partial slabs first
-    if (!SLAB_LIST_EMPTY(&cache->partial_slabs)) {
-        slab = (struct kmem_slab *)cache->partial_slabs.next;
+    if (!SLAB_LIST_EMPTY(&cache->hot.partial_slabs)) {
+        slab = (struct kmem_slab *)cache->hot.partial_slabs.next;
     }
     // Then try empty slabs
-    else if (!SLAB_LIST_EMPTY(&cache->empty_slabs)) {
-        slab = (struct kmem_slab *)cache->empty_slabs.next;
+    else if (!SLAB_LIST_EMPTY(&cache->warm.empty_slabs)) {
+        slab = (struct kmem_slab *)cache->warm.empty_slabs.next;
         SLAB_LIST_REMOVE(&slab->slab_link);
-        SLAB_LIST_INSERT_HEAD(&cache->partial_slabs, &slab->slab_link);
+        SLAB_LIST_INSERT_HEAD(&cache->hot.partial_slabs, &slab->slab_link);
         cache->stats.active_slabs++;
     }
     // Need to allocate a new slab
@@ -303,7 +303,7 @@ void *kmem_cache_alloc(struct kmem_cache *cache, int flags) {
             }
             return NULL;
         }
-        SLAB_LIST_INSERT_HEAD(&cache->partial_slabs, &slab->slab_link);
+        SLAB_LIST_INSERT_HEAD(&cache->hot.partial_slabs, &slab->slab_link);
         cache->stats.active_slabs++;
     }
     
@@ -322,12 +322,12 @@ void *kmem_cache_alloc(struct kmem_cache *cache, int flags) {
     // Move to full list if no more free objects
     if (slab->num_free == 0) {
         SLAB_LIST_REMOVE(&slab->slab_link);
-        SLAB_LIST_INSERT_HEAD(&cache->full_slabs, &slab->slab_link);
+        SLAB_LIST_INSERT_HEAD(&cache->warm.full_slabs, &slab->slab_link);
     }
     
     // Zero memory if requested
     if (flags & KM_ZERO) {
-        memset(obj, 0, cache->object_size);
+        memset(obj, 0, cache->hot.object_size);
     }
     
     // Update statistics
@@ -346,10 +346,10 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj) {
     struct slab_list_node *node;
     
     // Search in full slabs
-    for (node = cache->full_slabs.next; node != &cache->full_slabs; node = node->next) {
+    for (node = cache->warm.full_slabs.next; node != &cache->warm.full_slabs; node = node->next) {
         struct kmem_slab *s = (struct kmem_slab *)node;
-        size_t object_area_size = s->num_objects * cache->object_size;
-        if (obj >= s->slab_base && obj < (char *)s->slab_base + object_area_size) {
+        size_t object_area_size = s->num_objects * cache->hot.object_size;
+        if (obj >= s->slab_base && (char *)obj < (char *)s->slab_base + object_area_size) {
             slab = s;
             break;
         }
@@ -357,10 +357,10 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj) {
     
     // Search in partial slabs
     if (!slab) {
-        for (node = cache->partial_slabs.next; node != &cache->partial_slabs; node = node->next) {
+        for (node = cache->hot.partial_slabs.next; node != &cache->hot.partial_slabs; node = node->next) {
             struct kmem_slab *s = (struct kmem_slab *)node;
-            if (obj >= s->slab_base && obj < (char *)s->slab_base + 
-                (s->num_objects * cache->object_size)) {
+            if (obj >= s->slab_base && (char *)obj < (char *)s->slab_base + 
+                (s->num_objects * cache->hot.object_size)) {
                 slab = s;
                 break;
             }
@@ -386,27 +386,27 @@ void kmem_cache_free(struct kmem_cache *cache, void *obj) {
     if (slab->num_free == 1) {
         // Check if this slab was in the full list
         struct slab_list_node *check_node;
-        for (check_node = cache->full_slabs.next; check_node != &cache->full_slabs; check_node = check_node->next) {
+        for (check_node = cache->warm.full_slabs.next; check_node != &cache->warm.full_slabs; check_node = check_node->next) {
             if ((struct kmem_slab *)check_node == slab) {
                 // Was full, now partial
                 SLAB_LIST_REMOVE(&slab->slab_link);
-                SLAB_LIST_INSERT_HEAD(&cache->partial_slabs, &slab->slab_link);
+                SLAB_LIST_INSERT_HEAD(&cache->hot.partial_slabs, &slab->slab_link);
                 break;
             }
         }
     } else if (slab->num_free == slab->num_objects) {
         // Now empty
         SLAB_LIST_REMOVE(&slab->slab_link);
-        SLAB_LIST_INSERT_HEAD(&cache->empty_slabs, &slab->slab_link);
+        SLAB_LIST_INSERT_HEAD(&cache->warm.empty_slabs, &slab->slab_link);
         cache->stats.active_slabs--;
         
         // Optionally destroy empty slabs if NOREAP not set
-        if (!(cache->flags & KMEM_CACHE_NOREAP)) {
+        if (!(cache->hot.flags & KMEM_CACHE_NOREAP)) {
             // Keep at least one empty slab
-            if (!SLAB_LIST_EMPTY(&cache->empty_slabs) && 
-                cache->empty_slabs.next->next != &cache->empty_slabs) {
+            if (!SLAB_LIST_EMPTY(&cache->warm.empty_slabs) && 
+                cache->warm.empty_slabs.next->next != &cache->warm.empty_slabs) {
                 // Destroy the SECOND empty slab (not the one we just added)
-                struct kmem_slab *slab_to_destroy = (struct kmem_slab *)cache->empty_slabs.next->next;
+                struct kmem_slab *slab_to_destroy = (struct kmem_slab *)cache->warm.empty_slabs.next->next;
                 SLAB_LIST_REMOVE(&slab_to_destroy->slab_link);
                 slab_destroy(slab_to_destroy);
             }
@@ -425,13 +425,13 @@ void kmem_cache_dump(struct kmem_cache *cache) {
     if (!cache) return;
     
     uart_puts("\nCache: ");
-    uart_puts(cache->name);
+    uart_puts(cache->warm.name);
     uart_puts("\n  Object size: ");
-    uart_putdec(cache->object_size);
+    uart_putdec(cache->hot.object_size);
     uart_puts(", Align: ");
-    uart_putdec(cache->align);
+    uart_putdec(cache->hot.align);
     uart_puts("\n  Objects per slab: ");
-    uart_putdec(cache->objects_per_slab);
+    uart_putdec(cache->hot.objects_per_slab);
     uart_puts("\n  Statistics:\n");
     uart_puts("    Allocations: ");
     uart_putdec(cache->stats.allocs);
@@ -452,7 +452,7 @@ void kmem_cache_dump(struct kmem_cache *cache) {
     struct slab_list_node *node;
     
     // Count full slabs
-    for (node = cache->full_slabs.next; node != &cache->full_slabs; node = node->next) {
+    for (node = cache->warm.full_slabs.next; node != &cache->warm.full_slabs; node = node->next) {
         full++;
         if (full > 100) {
             uart_puts("  ERROR: Too many full slabs, list corrupted!\n");
@@ -461,7 +461,7 @@ void kmem_cache_dump(struct kmem_cache *cache) {
     }
     
     // Count partial slabs
-    for (node = cache->partial_slabs.next; node != &cache->partial_slabs; node = node->next) {
+    for (node = cache->hot.partial_slabs.next; node != &cache->hot.partial_slabs; node = node->next) {
         partial++;
         if (partial > 100) {
             uart_puts("  ERROR: Too many partial slabs, list corrupted!\n");
@@ -470,7 +470,7 @@ void kmem_cache_dump(struct kmem_cache *cache) {
     }
     
     // Count empty slabs
-    for (node = cache->empty_slabs.next; node != &cache->empty_slabs; node = node->next) {
+    for (node = cache->warm.empty_slabs.next; node != &cache->warm.empty_slabs; node = node->next) {
         empty++;
         if (empty > 100) {
             uart_puts("  ERROR: Too many empty slabs, list corrupted!\n");
@@ -499,7 +499,7 @@ void kmem_dump_all_caches(void) {
     struct slab_list_node *node;
     for (node = cache_list.next; node != &cache_list; node = node->next) {
         // Get the cache from the list node using container_of pattern
-        struct kmem_cache *cache = (struct kmem_cache *)((char *)node - offsetof(struct kmem_cache, cache_link));
+        struct kmem_cache *cache = (struct kmem_cache *)((char *)node - offsetof(struct kmem_cache, warm.cache_link));
         kmem_cache_dump(cache);
     }
     
@@ -520,9 +520,9 @@ struct kmem_slab *kmem_cache_find_slab(struct kmem_cache *cache, void *obj) {
     
     // Check all slab lists
     struct slab_list_node *lists[] = {
-        &cache->full_slabs,
-        &cache->partial_slabs,
-        &cache->empty_slabs
+        &cache->warm.full_slabs,
+        &cache->hot.partial_slabs,
+        &cache->warm.empty_slabs
     };
     
     for (int i = 0; i < 3; i++) {
@@ -542,9 +542,9 @@ struct kmem_slab *kmem_cache_find_slab(struct kmem_cache *cache, void *obj) {
             
             // Check if object is within this slab's object area
             // Note: We need to check against the actual object area, not the entire slab
-            size_t object_area_size = slab->num_objects * cache->object_size;
+            size_t object_area_size = slab->num_objects * cache->hot.object_size;
             if (obj >= slab->slab_base && 
-                obj < (char *)slab->slab_base + object_area_size) {
+                (char *)obj < (char *)slab->slab_base + object_area_size) {
                 return slab;
             }
         }

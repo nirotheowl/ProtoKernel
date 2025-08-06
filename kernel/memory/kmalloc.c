@@ -218,7 +218,7 @@ void kfree(void *ptr) {
 #endif
         
         // Get the size from the cache
-        size_t obj_size = cache->object_size - (2 * KMALLOC_REDZONE_SIZE);
+        size_t obj_size = cache->hot.object_size - (2 * KMALLOC_REDZONE_SIZE);
         
         // Update statistics
         global_stats.total_frees++;
@@ -272,7 +272,7 @@ size_t kmalloc_size(void *ptr) {
     
     if (cache) {
         // Return the usable size (minus red zones)
-        return cache->object_size - (2 * KMALLOC_REDZONE_SIZE);
+        return cache->hot.object_size - (2 * KMALLOC_REDZONE_SIZE);
     } else {
         // Check large allocation header
         struct kmalloc_large_header *header = 

@@ -41,7 +41,7 @@ static void test_basic_insert_lookup(void) {
     
     // Create a test cache and slab
     struct kmem_cache test_cache = {0};
-    strncpy(test_cache.name, "test_cache", 31);
+    strncpy(test_cache.warm.name, "test_cache", 31);
     
     void *test_addr = (void *)0xFFFF000040300000;  // Arbitrary test address
     struct kmem_slab *slab = create_test_slab(test_addr, PAGE_SIZE, &test_cache);
@@ -73,8 +73,8 @@ static void test_collision_handling(void) {
     tests_run++;
     
     struct kmem_cache cache1 = {0}, cache2 = {0};
-    strncpy(cache1.name, "cache1", 31);
-    strncpy(cache2.name, "cache2", 31);
+    strncpy(cache1.warm.name, "cache1", 31);
+    strncpy(cache2.warm.name, "cache2", 31);
     
     // Create addresses that will likely collide (same page after shift)
     void *addr1 = (void *)0xFFFF000040400000;
@@ -116,7 +116,7 @@ static void test_boundary_addresses(void) {
     tests_run++;
     
     struct kmem_cache cache = {0};
-    strncpy(cache.name, "boundary_cache", 31);
+    strncpy(cache.warm.name, "boundary_cache", 31);
     
     void *base = (void *)0xFFFF000040500000;
     size_t size = 4 * PAGE_SIZE;  // 16KB slab
@@ -169,7 +169,7 @@ static void test_remove_lookup(void) {
     tests_run++;
     
     struct kmem_cache cache = {0};
-    strncpy(cache.name, "remove_cache", 31);
+    strncpy(cache.warm.name, "remove_cache", 31);
     
     void *addr = (void *)0xFFFF000040600000;
     struct kmem_slab *slab = create_test_slab(addr, PAGE_SIZE, &cache);
@@ -206,7 +206,7 @@ static void test_many_slabs(void) {
     tests_run++;
     
     struct kmem_cache cache = {0};
-    strncpy(cache.name, "stress_cache", 31);
+    strncpy(cache.warm.name, "stress_cache", 31);
     
     // Get baseline entry count before test
     size_t baseline_entries = slab_lookup_get_entry_count();
@@ -304,7 +304,7 @@ static void test_hash_distribution(void) {
     // We'll create slabs at regular intervals and check they don't all collide
     
     struct kmem_cache cache = {0};
-    strncpy(cache.name, "dist_cache", 31);
+    strncpy(cache.warm.name, "dist_cache", 31);
     
     #define DIST_TEST_COUNT 32
     struct kmem_slab *slabs[DIST_TEST_COUNT];

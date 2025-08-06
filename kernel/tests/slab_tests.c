@@ -60,9 +60,9 @@ static int test_cache_create_destroy(void) {
     ASSERT(cache != NULL, "Failed to create cache");
     
     // Verify cache properties
-    ASSERT(cache->object_size == 64, "Invalid object size");
-    ASSERT(cache->align == 8, "Invalid alignment");
-    ASSERT(strcmp(cache->name, "test_cache") == 0, "Invalid cache name");
+    ASSERT(cache->hot.object_size == 64, "Invalid object size");
+    ASSERT(cache->hot.align == 8, "Invalid alignment");
+    ASSERT(strcmp(cache->warm.name, "test_cache") == 0, "Invalid cache name");
     
     // Destroy the cache
     kmem_cache_destroy(cache);

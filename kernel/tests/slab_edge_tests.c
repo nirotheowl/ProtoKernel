@@ -369,16 +369,16 @@ static int test_cache_names(void) {
     ASSERT(cache != NULL, "Empty name should be allowed");
     kmem_cache_destroy(cache);
     
-    // Test maximum length name (31 chars + null terminator)
+    // Test maximum length name (15 chars + null terminator for 16 byte field)
     char long_name[40];
-    for (int i = 0; i < 31; i++) long_name[i] = 'A' + (i % 26);
-    long_name[31] = '\0';
+    for (int i = 0; i < 15; i++) long_name[i] = 'A' + (i % 26);
+    long_name[15] = '\0';
     
     cache = kmem_cache_create(long_name, 64, 8, 0);
     ASSERT(cache != NULL, "Max length name should work");
     
     // Verify name was stored correctly (should be truncated if needed)
-    ASSERT(strlen(cache->name) <= 31, "Name too long");
+    ASSERT(strlen(cache->warm.name) <= 15, "Name too long");
     
     kmem_cache_destroy(cache);
     
@@ -388,7 +388,7 @@ static int test_cache_names(void) {
     
     cache = kmem_cache_create(long_name, 64, 8, 0);
     ASSERT(cache != NULL, "Over-length name should work (truncated)");
-    ASSERT(strlen(cache->name) == 31, "Name should be truncated");
+    ASSERT(strlen(cache->warm.name) == 15, "Name should be truncated");
     
     kmem_cache_destroy(cache);
     TEST_PASS();
