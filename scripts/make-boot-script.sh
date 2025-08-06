@@ -10,7 +10,7 @@ if ! command -v mkimage &> /dev/null; then
 fi
 
 echo "Creating U-Boot boot script..."
-mkimage -A arm64 -O linux -T script -C none -a 0 -e 0 -n "micl-arm-os boot script" -d scripts/boot.cmd build/boot.scr
+mkimage -A arm64 -O linux -T script -C none -a 0 -e 0 -n "ProtoKernel boot script" -d scripts/boot.cmd build/boot.scr
 
 if [ $? -eq 0 ]; then
     echo "Successfully created build/boot.scr"

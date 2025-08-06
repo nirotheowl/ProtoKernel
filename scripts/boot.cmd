@@ -1,9 +1,9 @@
-# U-Boot boot script for micl-arm-os kernel
+# U-Boot boot script for ProtoKernel
 # This script will be compiled to boot.scr using mkimage
 # Location: scripts/boot.cmd
 # Output: build/boot.scr
 
-echo "Loading micl-arm-os kernel..."
+echo "Loading ProtoKernel..."
 
 # Try different storage devices in order
 if test -e virtio 0 kernel.bin; then

@@ -1,4 +1,4 @@
-A 64-bit ARM (AArch64) kernel project for educational and experimental purposes.
+A 64-bit custom kernel for experimental purposes. 
 
 ## Prerequisites
 
@@ -53,4 +53,5 @@ build
 ```bash
 run_emu
 ```
-*Last Updated: 2025-08-01*
+
+*Last Updated: 2025-08-06*

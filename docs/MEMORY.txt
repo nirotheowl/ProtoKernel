@@ -1,4 +1,4 @@
-MICL-ARM-OS KERNEL MEMORY LAYOUT AND MANAGEMENT
+PROTOKERNEL MEMORY LAYOUT AND MANAGEMENT
 ===============================================
 
 Author: Michael W. Lloyd
