@@ -1,4 +1,4 @@
-MICL-ARM-OS GDB DEBUGGING
+PROTOKERNEL GDB DEBUGGING
 =========================
 
 ## Quick Start
