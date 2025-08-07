@@ -2,30 +2,34 @@ This project is a 64-bit experimental kernel intended to be run on ARMv8 and RIS
 
 ## Prerequisites
 
+Note: On some distributions of Linux, `aarch64-none-elf` (or equivalent) may not be available. It is
+**NOT** guaranteed that the `aarch64-linux-gnu-*` toolchain is compatible, so you may need to compile
+the toolchain yourself from https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads.
+
 ### Ubuntu (22.04 or later)
 
-Install the required packages:
+Install the required packages (note: ARM64 toolchain not available, you have to compile that
+manually):
 
 ```bash
 sudo apt update
 sudo apt install \
-    gcc-aarch64-linux-gnu \
-    g++-aarch64-linux-gnu \
-    gdb-multiarch \
     qemu-system-arm \
-    make
+    make \
+    gdb-multiarch \
+    git
 ```
 
 ### Arch Linux
 
-Install the required packages:
+Install the required packages (note: some are AUR packages):
 
 ```bash
-sudo pacman -S \
-    aarch64-linux-gnu-gcc \
-    aarch64-linux-gnu-gdb \
+yay -S \
     qemu-full \
-    make 
+    make \
+    git \
+    arm-gnu-toolchain-aarch64-none-elf-bin
 ```
 
 ## Building and Running
