@@ -266,8 +266,11 @@ uint64_t pmm_alloc_pages(size_t count) {
             if (found == 0) start = i;
             found++;
             
+            // Check if we have enough pages
             if (found == count) {
-                // Mark all pages as allocated
+                // Check if they don't exceed bounds
+                if ((start + count) <= pmm_total_pages) {
+                    // Mark all pages as allocated
                 for (uint64_t j = start; j < start + count; j++) {
                     pmm_set_bit(j);
                 }
@@ -283,12 +286,17 @@ uint64_t pmm_alloc_pages(size_t count) {
                 } else {
                     va = pa;
                 }
+                
                 uint64_t* page_ptr = (uint64_t*)va;
                 for (size_t j = 0; j < (PMM_PAGE_SIZE * count) / sizeof(uint64_t); j++) {
                     page_ptr[j] = 0;
                 }
-                
-                return pa;
+                    
+                    return pa;
+                } else {
+                    // Boundary check failed, reset search
+                    found = 0;
+                }
             }
         } else {
             found = 0;

@@ -19,6 +19,7 @@
 #include <memory/vmparam.h>
 #include <uart.h>
 #include <string.h>
+#include <stdbool.h>
 
 static struct page_allocator g_page_alloc = {0};
 static struct page_alloc_stats g_stats = {0};
@@ -365,8 +366,13 @@ uint64_t page_alloc_chunk_from_pmm(size_t size) {
     // Split the chunk into reasonably sized blocks
     while (remaining_size > 0 && block_idx < (int)chunk->num_blocks) {
         // Find the largest order that fits
-        uint32_t order = PAGE_ALLOC_MAX_ORDER;
-        while (order > 0) {
+        // Cap at order 11 to avoid alignment issues with order 12
+        // Order 12 allocations should go directly through PMM
+        uint32_t order = (PAGE_ALLOC_MAX_ORDER > 0) ? PAGE_ALLOC_MAX_ORDER - 1 : 0;
+        bool block_created = false;
+        
+        // Try orders from 11 down to 0
+        do {
             size_t block_size = 1UL << (order + PAGE_SHIFT);
             uint64_t aligned_addr = align_up(current_addr, block_size);
             
@@ -392,32 +398,17 @@ uint64_t page_alloc_chunk_from_pmm(size_t size) {
                 remaining_size = (usable_addr + usable_size > current_addr) ? 
                                  (usable_addr + usable_size - current_addr) : 0;
                 block_idx++;
+                block_created = true;
                 break;
             }
+            
+            if (order == 0) break;  // Prevent underflow
             order--;
-        }
+        } while (order <= PAGE_ALLOC_MAX_ORDER);  // This condition ensures we try order 0
         
-        // If we couldn't fit any order, try to skip past alignment issues
-        if (order == 0) {
-            // Try single page
-            if (remaining_size >= PAGE_SIZE && block_idx < (int)chunk->num_blocks) {
-                chunk->blocks[block_idx].phys_addr = current_addr;
-                chunk->blocks[block_idx].order = 0;
-                chunk->blocks[block_idx].flags = 0;
-                chunk->blocks[block_idx].next = NULL;
-                chunk->blocks[block_idx].prev = NULL;
-                
-                page_alloc_add_to_free_list(&chunk->blocks[block_idx], 0);
-                
-                g_page_alloc.total_pages += 1;
-                g_page_alloc.free_pages += 1;
-                
-                current_addr += PAGE_SIZE;
-                remaining_size -= PAGE_SIZE;
-                block_idx++;
-            } else {
-                break;  // Can't use remaining space
-            }
+        // If we couldn't create any block, we're done
+        if (!block_created) {
+            break;  // Can't use remaining space
         }
     }
     
@@ -436,8 +427,8 @@ uint64_t page_alloc(uint32_t order) {
         return 0;
     }
     
-    if (order > PAGE_ALLOC_MAX_ORDER) {
-        // For allocations >16MB, pass through directly to PMM
+    // For order-12 and above, go directly to PMM to avoid alignment issues
+    if (order >= PAGE_ALLOC_MAX_ORDER) {
         size_t pages = 1UL << order;
         uint64_t phys_addr = pmm_alloc_pages(pages);
         if (phys_addr) {
@@ -448,7 +439,9 @@ uint64_t page_alloc(uint32_t order) {
     }
     
     // Try to find a free block of the requested order or larger
-    for (uint32_t current_order = order; current_order <= PAGE_ALLOC_MAX_ORDER; current_order++) {
+    // We only create blocks up to order 11 in chunks
+    uint32_t max_chunk_order = (PAGE_ALLOC_MAX_ORDER > 0) ? PAGE_ALLOC_MAX_ORDER - 1 : 0;
+    for (uint32_t current_order = order; current_order <= max_chunk_order; current_order++) {
         struct page_free_list *list = &g_page_alloc.free_lists[current_order];
         
         if (list->head) {
@@ -537,8 +530,8 @@ void page_free(uint64_t phys_addr, uint32_t order) {
         return;
     }
     
-    if (order > PAGE_ALLOC_MAX_ORDER) {
-        // For allocations >16MB, pass through directly to PMM
+    // For order-12 and above, these went directly to PMM
+    if (order >= PAGE_ALLOC_MAX_ORDER) {
         size_t pages = 1UL << order;
         pmm_free_pages(phys_addr, pages);
         g_stats.frees[PAGE_ALLOC_MAX_ORDER]++;  // Track as max order

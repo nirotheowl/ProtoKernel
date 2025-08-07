@@ -373,6 +373,7 @@ el1_entry:
 
     /* Configure TCR_EL1 (Translation Control Register)
      * Controls address translation parameters:
+     * - IPS: Intermediate Physical Address Size (2 = 40-bit, supports up to 1TB)
      * - T0SZ/T1SZ: Size of address space (16 = 48-bit)
      * - TG0/TG1: Translation granule (0/2 = 4KB)
      * - SH0/SH1: Shareability (3 = Inner shareable)
@@ -381,6 +382,7 @@ el1_entry:
      * - TBI0: Top byte ignored for tagging */
     mov x0, #16                           /* T0SZ = 16 */
     orr x0, x0, #(16 << 16)               /* T1SZ = 16 */
+    orr x0, x0, #(0x2 << 32)              /* IPS = 2 (40-bit physical addresses) */
     orr x0, x0, #(0x3 << 12)              /* SH0 = Inner shareable */
     orr x0, x0, #(0x3 << 28)              /* SH1 = Inner shareable */
     orr x0, x0, #(0x1 << 10)              /* ORGN0 = WBWA */
