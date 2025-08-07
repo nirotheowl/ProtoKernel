@@ -19,7 +19,7 @@ if [ ! -f "$UBOOT_BIN" ]; then
     echo "1. git clone https://github.com/u-boot/u-boot.git"
     echo "2. cd u-boot"
     echo "3. make qemu_arm64_defconfig"
-    echo "4. make CROSS_COMPILE=aarch64-linux-gnu-"
+    echo "4. make CROSS_COMPILE=aarch64-none-elf-"
     echo "5. cp u-boot.bin ../"
     exit 1
 fi

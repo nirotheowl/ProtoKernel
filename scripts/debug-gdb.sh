@@ -11,14 +11,12 @@ if [ ! -f "$KERNEL_ELF" ]; then
     exit 1
 fi
 
-# Check if aarch64-linux-gnu-gdb exists, otherwise try gdb-multiarch
-if command -v aarch64-linux-gnu-gdb &> /dev/null; then
-    GDB=aarch64-linux-gnu-gdb
-elif command -v gdb-multiarch &> /dev/null; then
-    GDB=gdb-multiarch
+# Check if aarch64-none-elf-gdb exists
+if command -v aarch64-none-elf-gdb &> /dev/null; then
+    GDB=aarch64-none-elf-gdb
 else
-    echo "Error: No suitable GDB found!"
-    echo "Please install either aarch64-linux-gnu-gdb or gdb-multiarch"
+    echo "Error: aarch64-none-elf-gdb not found!"
+    echo "Please install aarch64-none-elf-gdb"
     exit 1
 fi
 

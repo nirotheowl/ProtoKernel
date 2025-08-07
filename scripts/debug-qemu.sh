@@ -102,6 +102,6 @@ source $GDB_SCRIPT
 EOF
 
 # Start GDB with our init script
-aarch64-linux-gnu-gdb -x "$TMP_GDB_SCRIPT"
+aarch64-none-elf-gdb -x "$TMP_GDB_SCRIPT"
 
 echo "Debug session ended"
