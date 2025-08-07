@@ -1,4 +1,4 @@
-A 64-bit custom kernel for experimental purposes. 
+This project is a 64-bit experimental kernel intended to be run on ARMv8 and RISC-V targets. 
 
 ## Prerequisites
 
