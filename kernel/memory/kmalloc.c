@@ -7,6 +7,7 @@
 #include <memory/kmalloc.h>
 #include <memory/size_classes.h>
 #include <memory/pmm.h>
+#include <memory/page_alloc.h>
 #include <memory/vmparam.h>
 #include <memory/vmm.h>
 #include <memory/malloc_types.h>
@@ -36,6 +37,9 @@ void kmalloc_init(void) {
         kmalloc_debug("Already initialized\n");
         return;
     }
+    
+    // Initialize page allocator for large allocations
+    page_alloc_init();
     
     // Initialize hash table for slab lookups (uses PMM bootstrap)
     slab_lookup_init();
@@ -114,7 +118,17 @@ void *kmalloc(size_t size, int flags) {
             uart_puts("\n");
         }
         
-        uint64_t phys_addr = pmm_alloc_pages(pages_needed);
+        uint64_t phys_addr;
+        
+        // Check if we should use page allocator or direct PMM
+        if (pages_needed <= (1UL << PAGE_ALLOC_MAX_ORDER)) {
+            // Use page allocator for allocations up to 16MB (order 12 = 4096 pages)
+            uint32_t order = page_get_order_for_size(total_size);
+            phys_addr = page_alloc(order);
+        } else {
+            // For allocations >16MB, go directly to PMM
+            phys_addr = pmm_alloc_pages(pages_needed);
+        }
         
         if (!phys_addr) {
             global_stats.failed_allocs++;
@@ -256,7 +270,15 @@ void kfree(void *ptr) {
         uint64_t phys_addr = DMAP_TO_PHYS((uint64_t)header);
         
         if (phys_addr) {
-            pmm_free_pages(phys_addr, pages);
+            // Check if we should use page allocator or direct PMM
+            if (pages <= (1UL << PAGE_ALLOC_MAX_ORDER)) {
+                // Use page allocator for allocations up to 16MB
+                uint32_t order = page_get_order_for_size(total_size);
+                page_free(phys_addr, order);
+            } else {
+                // For allocations >16MB, free directly to PMM
+                pmm_free_pages(phys_addr, pages);
+            }
         }
     }
 }
