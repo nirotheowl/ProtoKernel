@@ -18,6 +18,9 @@
 .extern KERNEL_PHYS_BASE
 .extern _kernel_end
 
+/* Import exception vectors from exceptions.S */
+.extern exception_vectors
+
 /*
  * ARMv8 Page Table Configuration
  * ==============================
@@ -444,9 +447,9 @@ higher_half:
     sub x0, x0, #0x10000                  /* 64KB stack below code */
     mov sp, x0
 
-    /* Pass DTB pointer to kernel_main */
+    /* Pass DTB pointer to init_arm64 */
     mov x0, x27                           /* Restore DTB pointer from x27 */
-    bl kernel_main
+    bl init_arm64
 
     /* If kernel_main returns, hang */
 hang:

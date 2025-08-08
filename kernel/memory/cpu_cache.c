@@ -1,60 +1,25 @@
 /*
  * kernel/memory/cpu_cache.c
  *
- * ARM64 cache management functions
+ * Architecture-independent cache management wrapper
  */
 
-#include <stdint.h>
+#include <memory/cpu_cache.h>
+#include <arch_cache.h>
+#include <stddef.h>
 
-// Get data cache line size
-static inline uint64_t get_dcache_line_size(void) {
-    uint64_t ctr;
-    __asm__ volatile("mrs %0, CTR_EL0" : "=r"(ctr));
-    return 4 << ((ctr >> 16) & 0xF);
+void cpu_cache_init(void) {
+    arch_cache_init();
 }
 
-// Clean data cache by address range
-void dcache_clean_range(uint64_t start, uint64_t size) {
-    uint64_t line_size = get_dcache_line_size();
-    uint64_t addr;
-    
-    for (addr = start & ~(line_size - 1); addr < start + size; addr += line_size) {
-        __asm__ volatile("dc cvac, %0" : : "r"(addr) : "memory");
-    }
-    
-    __asm__ volatile("dsb sy" : : : "memory");
+void cpu_dcache_clean_range(void *addr, size_t size) {
+    arch_cache_clean(addr, size);
 }
 
-// Invalidate data cache by address range
-void dcache_invalidate_range(uint64_t start, uint64_t size) {
-    uint64_t line_size = get_dcache_line_size();
-    uint64_t addr;
-    
-    for (addr = start & ~(line_size - 1); addr < start + size; addr += line_size) {
-        __asm__ volatile("dc ivac, %0" : : "r"(addr) : "memory");
-    }
-    
-    __asm__ volatile("dsb sy" : : : "memory");
+void cpu_dcache_invalidate_range(void *addr, size_t size) {
+    arch_cache_invalidate(addr, size);
 }
 
-// Clean and invalidate data cache by address range
-void dcache_clean_invalidate_range(uint64_t start, uint64_t size) {
-    uint64_t line_size = get_dcache_line_size();
-    uint64_t addr;
-    
-    for (addr = start & ~(line_size - 1); addr < start + size; addr += line_size) {
-        __asm__ volatile("dc civac, %0" : : "r"(addr) : "memory");
-    }
-    
-    __asm__ volatile("dsb sy" : : : "memory");
-}
-
-// Invalidate entire instruction cache
-void icache_invalidate_all(void) {
-    __asm__ volatile(
-        "ic iallu\n"
-        "dsb sy\n"
-        "isb"
-        : : : "memory"
-    );
+void cpu_dcache_clean_invalidate_range(void *addr, size_t size) {
+    arch_cache_flush(addr, size);
 }

@@ -9,6 +9,7 @@
 #include <memory/devmap.h>
 #include <device/device.h>
 #include <device/resource.h>
+#include <arch_interface.h>
 
 static volatile uint32_t *uart_base = NULL;
 
@@ -66,17 +67,17 @@ void uart_putc(char c) {
     
     // Wait for transmit FIFO to not be full
     while (UART0_FR & (1 << 5)) {
-        __asm__ volatile("nop");
+        arch_io_nop();
     }
     
     UART0_DR = c;
     
     // Ensure the write completes to device memory
-    __asm__ volatile("dsb sy");
+    arch_io_barrier();
     
     // Wait for transmit to complete
     while (UART0_FR & (1 << 3)) {
-        __asm__ volatile("nop");
+        arch_io_nop();
     }
 }
 

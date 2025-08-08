@@ -1,13 +1,14 @@
 /*
- * kernel/kernel.c
+ * kernel/core/kernel_main.c
  *
- * Main kernel entry point and initialization
+ * Architecture-independent kernel initialization
  */
 
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
 #include <uart.h>
+#include <arch_interface.h>
 #include <panic.h>
 #include <memory/pmm.h>
 #include <memory/memmap.h>
@@ -107,10 +108,8 @@ void kernel_main(void* dtb) {
     uart_puts(")\n");
     
     uart_puts("\nCurrent Exception Level: ");
-    uint64_t current_el;
-    __asm__ volatile("mrs %0, CurrentEL" : "=r" (current_el));
-    current_el = (current_el >> 2) & 0x3;
-    uart_putc('0' + current_el);
+    int level = arch_get_exception_level();
+    uart_putc('0' + level);
     uart_puts("\n");
        
     uart_puts("\nSystem Information:\n");

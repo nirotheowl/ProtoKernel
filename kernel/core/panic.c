@@ -8,19 +8,7 @@
 #include <uart.h>
 #include <stdarg.h>
 #include <stddef.h>
-
-// Architecture-specific halt implementation
-static void arch_halt(void) __attribute__((noreturn));
-
-static void arch_halt(void) {
-    // Disable all interrupts
-    __asm__ volatile("msr daifset, #0xf");
-    
-    // Infinite loop with wait-for-event to save power
-    while (1) {
-        __asm__ volatile("wfe");
-    }
-}
+#include <arch_interface.h>
 
 // Common panic finish routine
 static void panic_finish(void) __attribute__((noreturn));

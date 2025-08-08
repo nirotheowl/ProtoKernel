@@ -5,7 +5,7 @@
  */
 
 #include <stdint.h>
-#include <exceptions/exceptions.h>
+#include <arch_exceptions.h>
 #include <uart.h>
 
 // External assembly function

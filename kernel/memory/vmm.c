@@ -12,6 +12,7 @@
 #include <uart.h>
 #include <string.h>
 #include <stddef.h>
+#include <arch_interface.h>
 
 /* Additional PTE definitions not in paging.h */
 #define PTE_ADDR_MASK      0x0000FFFFFFFFF000UL  /* Bits 47:12 for address */
@@ -190,7 +191,7 @@ static uint64_t* vmm_walk_create(vmm_context_t *ctx, uint64_t vaddr, int target_
             *pte = phys | PTE_TYPE_TABLE | PTE_VALID;
             
             /* Ensure write is visible */
-            __asm__ volatile("dsb ishst" ::: "memory");
+            arch_mmu_barrier();
         }
         
         /* Move to next level */
@@ -206,8 +207,7 @@ void vmm_init(void) {
     // uart_puts("\nInitializing Virtual Memory Manager...\n");
     
     /* Get current TTBR1_EL1 value (kernel page table) */
-    uint64_t ttbr1;
-    __asm__ volatile("mrs %0, TTBR1_EL1" : "=r"(ttbr1));
+    uint64_t ttbr1 = arch_mmu_get_ttbr1();
     
     /* Extract page table base (bits 47:12) */
     uint64_t pt_phys = ttbr1 & 0x0000FFFFFFFFF000UL;
@@ -297,7 +297,7 @@ bool vmm_map_page(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr, uint64_t a
     *pte = paddr | vmm_attrs_to_pte(attrs) | PTE_TYPE_PAGE | PTE_VALID;
     
     /* Ensure write is visible before TLB invalidate */
-    __asm__ volatile("dsb ishst" ::: "memory");
+    arch_mmu_barrier();
     
     /* Invalidate TLB for this address */
     vmm_flush_tlb_page(vaddr);
@@ -427,7 +427,7 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
                     // uart_puthex(phys);
                     // uart_puts("\n");
                     *pte = phys | PTE_TYPE_TABLE | PTE_VALID;
-                    __asm__ volatile("dsb ishst" ::: "memory");
+                    arch_mmu_barrier();
                 }
                 
                 // uart_puts("  About to cache L3 table, *pte=");
@@ -483,7 +483,7 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
     }
     
     /* Ensure all writes are visible */
-    __asm__ volatile("dsb ishst" ::: "memory");
+    arch_mmu_barrier();
     
     // uart_puts("VMM: Successfully mapped ");
     // uart_puthex(pages_mapped);
@@ -530,7 +530,7 @@ bool vmm_unmap_page(vmm_context_t *ctx, uint64_t vaddr) {
     *pte = 0;
     
     /* Ensure write is visible before TLB invalidate */
-    __asm__ volatile("dsb ishst" ::: "memory");
+    arch_mmu_barrier();
     
     /* Invalidate TLB */
     vmm_flush_tlb_page(vaddr);
@@ -685,22 +685,12 @@ bool vmm_is_mapped(vmm_context_t *ctx, uint64_t vaddr) {
 
 /* Flush TLB for a specific address */
 void vmm_flush_tlb_page(uint64_t vaddr) {
-    __asm__ volatile(
-        "tlbi vae1is, %0\n"
-        "dsb ish\n"
-        "isb\n"
-        : : "r" (vaddr >> 12) : "memory"
-    );
+    arch_mmu_invalidate_page(vaddr);
 }
 
 /* Flush entire TLB */
 void vmm_flush_tlb_all(void) {
-    __asm__ volatile(
-        "tlbi vmalle1is\n"
-        "dsb ish\n"
-        "isb\n"
-        ::: "memory"
-    );
+    arch_mmu_flush_all();
 }
 
 /* Debug: print page table entries for an address */

@@ -1,29 +1,46 @@
+# Architecture selection (default to ARM64)
+ARCH ?= arm64
+
+# Validate architecture
+VALID_ARCHS := arm64
+ifeq ($(filter $(ARCH),$(VALID_ARCHS)),)
+    $(error Invalid ARCH=$(ARCH). Valid options: $(VALID_ARCHS))
+endif
+
 # Toolchain
-CROSS_COMPILE ?= aarch64-none-elf-
+ifeq ($(ARCH),arm64)
+    CROSS_COMPILE ?= aarch64-none-elf-
+endif
+
 CC = $(CROSS_COMPILE)gcc
 AS = $(CROSS_COMPILE)as
 LD = $(CROSS_COMPILE)ld
 OBJCOPY = $(CROSS_COMPILE)objcopy
 OBJDUMP = $(CROSS_COMPILE)objdump
 
-# Flags
-CFLAGS = -Wall -Wextra -ffreestanding -nostdlib -nostartfiles -std=c11
-CFLAGS += -march=armv8-a -mgeneral-regs-only
-CFLAGS += -O2 -g
-CFLAGS += -I kernel/include
-# For higher-half kernel: use large code model to handle addresses > 4GB
-CFLAGS += -mcmodel=large
-# Disable PIC as it's incompatible with large model
-CFLAGS += -fno-pic -fno-pie
+# Common flags
+CFLAGS_COMMON = -Wall -Wextra -ffreestanding -nostdlib -nostartfiles -std=c11
+CFLAGS_COMMON += -O2 -g
 
-LDFLAGS = -T arch/arm64/linker.ld -nostdlib
-# Static linking required for large model
-LDFLAGS += -static
+# Include paths - now including architecture directories
+CFLAGS_COMMON += -I kernel/include
+CFLAGS_COMMON += -I arch/include
+CFLAGS_COMMON += -I arch/$(ARCH)/include
+
+# Architecture-specific flags
+ifeq ($(ARCH),arm64)
+    CFLAGS_ARCH = -march=armv8-a -mgeneral-regs-only
+    CFLAGS_ARCH += -mcmodel=large -fno-pic -fno-pie
+    LDSCRIPT = arch/$(ARCH)/linker.ld
+endif
+
+CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_ARCH)
+LDFLAGS = -T $(LDSCRIPT) -nostdlib -static
 
 # Directories
-BUILD_DIR = build
+BUILD_DIR = build/$(ARCH)
 KERNEL_DIR = kernel
-ARCH_DIR = arch
+ARCH_DIR = arch/$(ARCH)
 
 # Output files
 KERNEL_ELF = $(BUILD_DIR)/kernel.elf
@@ -31,17 +48,23 @@ KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 KERNEL_LST = $(BUILD_DIR)/kernel.lst
 
 # Source files
-KERNEL_SRCS = $(shell find $(KERNEL_DIR) -name '*.c')
-ARCH_SRCS = $(shell find $(ARCH_DIR) -name '*.S')
+# Architecture-independent kernel sources
+KERNEL_C_SRCS = $(shell find $(KERNEL_DIR) -name '*.c')
+
+# Architecture-specific sources
+ARCH_C_SRCS = $(shell find $(ARCH_DIR) -name '*.c' 2>/dev/null || true)
+ARCH_ASM_SRCS = $(shell find $(ARCH_DIR) -name '*.S' 2>/dev/null || true)
 
 # Object files
-KERNEL_OBJS = $(KERNEL_SRCS:%.c=$(BUILD_DIR)/%.o)
-ARCH_OBJS = $(ARCH_SRCS:%.S=$(BUILD_DIR)/%.o)
-ALL_OBJS = $(KERNEL_OBJS) $(ARCH_OBJS)
+KERNEL_OBJS = $(KERNEL_C_SRCS:%.c=$(BUILD_DIR)/%.o)
+ARCH_C_OBJS = $(ARCH_C_SRCS:%.c=$(BUILD_DIR)/%.o)
+ARCH_ASM_OBJS = $(ARCH_ASM_SRCS:%.S=$(BUILD_DIR)/%.o)
+ALL_OBJS = $(ARCH_ASM_OBJS) $(ARCH_C_OBJS) $(KERNEL_OBJS)
 
 # Default target
 .PHONY: all
 all: $(KERNEL_BIN) $(KERNEL_LST)
+	@echo "Build complete for $(ARCH) architecture"
 
 # Kernel binary
 $(KERNEL_BIN): $(KERNEL_ELF)
@@ -74,29 +97,41 @@ $(BUILD_DIR)/%.o: %.S
 clean:
 	rm -rf $(BUILD_DIR)
 
+# Clean all architectures
+.PHONY: cleanall
+cleanall:
+	rm -rf build/
+
 # Run targets
 .PHONY: run
 run: $(KERNEL_BIN)
-	./scripts/run.sh
+	./scripts/run-$(ARCH).sh
 
 .PHONY: qemu
 qemu: run
 
 .PHONY: debug
 debug: $(KERNEL_ELF)
-	./scripts/run-debug.sh
+	./scripts/run-debug-$(ARCH).sh
 
 .PHONY: display
 display: $(KERNEL_BIN)
-	./scripts/run-display.sh
+	./scripts/run-display-$(ARCH).sh
 
 # Help
 .PHONY: help
 help:
-	@echo "Available targets:"
-	@echo "  all      - Build kernel (default)"
-	@echo "  clean    - Remove build artifacts"
-	@echo "  run      - Run kernel in QEMU (headless)"
-	@echo "  display  - Run kernel in QEMU with display"
-	@echo "  debug    - Run kernel in QEMU with GDB"
-	@echo "  help     - Show this help message"
+	@echo "Multi-Architecture Kernel Build System"
+	@echo "======================================"
+	@echo "Build targets:"
+	@echo "  make [ARCH=arm64]  - Build kernel for specified architecture (default: arm64)"
+	@echo "  make clean         - Remove build artifacts for current ARCH"
+	@echo "  make cleanall      - Remove all build artifacts"
+	@echo ""
+	@echo "Run targets:"
+	@echo "  make run           - Run kernel in QEMU (headless)"
+	@echo "  make debug         - Run kernel in QEMU with GDB server"
+	@echo "  make display       - Run kernel in QEMU with display"
+	@echo ""
+	@echo "Available architectures: $(VALID_ARCHS)"
+	@echo "Current architecture: $(ARCH)"

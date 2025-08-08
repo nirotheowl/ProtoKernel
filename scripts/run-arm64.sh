@@ -3,7 +3,7 @@
 # Direct kernel boot with QEMU (for testing without U-Boot)
 # This bypasses U-Boot and loads the kernel directly
 
-KERNEL_BIN="build/kernel.bin"
+KERNEL_BIN="build/arm64/kernel.bin"
 
 if [ ! -f "$KERNEL_BIN" ]; then
     echo "Error: Kernel binary not found at $KERNEL_BIN"
