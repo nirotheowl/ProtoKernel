@@ -7,14 +7,14 @@
 #ifndef _ARM64_ARCH_IO_H_
 #define _ARM64_ARCH_IO_H_
 
-/* ARM64 I/O barrier */
+// ARM64 I/O barrier
 static inline void arch_io_barrier(void) {
     __asm__ volatile("dsb sy" ::: "memory");
 }
 
-/* ARM64 NOP instruction */
+// ARM64 NOP instruction
 static inline void arch_io_nop(void) {
     __asm__ volatile("nop");
 }
 
-#endif /* _ARM64_ARCH_IO_H_ */
+#endif // _ARM64_ARCH_IO_H_

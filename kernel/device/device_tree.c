@@ -12,79 +12,57 @@
 #include <drivers/fdt_mgr.h>
 #include <string.h>
 #include <uart.h>
+#include <arch_device.h>
 
 
-/* Forward declarations */
+// Forward declarations
 extern char *device_pool_strdup(const char *str);
 
-/* Global FDT blob pointer */
+// Global FDT blob pointer
 static void *fdt_blob = NULL;
 
-/* Device type mapping table */
+// Device type mapping table
 typedef struct {
     const char *compatible;
     device_type_t type;
 } device_type_map_t;
 
 static const device_type_map_t device_type_map[] = {
-    /* CPU cores */
-    { "arm,cortex-a53", DEV_TYPE_CPU },
-    { "arm,cortex-a57", DEV_TYPE_CPU },
-    { "arm,cortex-a72", DEV_TYPE_CPU },
-    { "arm,cortex-a76", DEV_TYPE_CPU },
-    
-    /* Interrupt controllers */
-    { "arm,gic-v3", DEV_TYPE_INTERRUPT },
-    { "arm,gic-400", DEV_TYPE_INTERRUPT },
-    { "arm,cortex-a15-gic", DEV_TYPE_INTERRUPT },
-    
-    /* Timers */
-    { "arm,armv8-timer", DEV_TYPE_TIMER },
-    { "arm,armv7-timer", DEV_TYPE_TIMER },
-    
-    /* UART */
-    { "arm,pl011", DEV_TYPE_UART },
-    { "arm,sbsa-uart", DEV_TYPE_UART },
+    // Generic UART types (not architecture-specific)
     { "ns16550a", DEV_TYPE_UART },
+    { "ns16550", DEV_TYPE_UART },
+    { "8250", DEV_TYPE_UART },
     
-    /* PCI */
+    // PCI
     { "pci-host-ecam-generic", DEV_TYPE_PCI },
     { "pci-host-cam-generic", DEV_TYPE_PCI },
     
-    /* VirtIO */
+    // VirtIO
     { "virtio,mmio", DEV_TYPE_VIRTIO },
     
-    /* Ethernet */
+    // Ethernet
     { "virtio,net", DEV_TYPE_ETHERNET },
     { "smsc,lan91c111", DEV_TYPE_ETHERNET },
     
-    /* Block devices */
+    // Block devices
     { "virtio,blk", DEV_TYPE_BLOCK },
     
-    /* GPIO */
-    { "arm,pl061", DEV_TYPE_GPIO },
     
-    /* Watchdog */
-    { "arm,sbsa-gwdt", DEV_TYPE_WATCHDOG },
-    
-    /* RTC */
-    { "arm,pl031", DEV_TYPE_RTC },
-    
-    /* Default platform device */
+    // Default platform device
     { "simple-bus", DEV_TYPE_PLATFORM },
     { "simple-mfd", DEV_TYPE_PLATFORM },
     
     { NULL, DEV_TYPE_UNKNOWN }
 };
 
-/* Initialize device tree subsystem */
+// Initialize device tree subsystem
 int device_tree_init(void *fdt) {
     if (!fdt) {
         // uart_puts("DT: No FDT blob provided\n");
         return -1;
     }
     
-    /* Validate FDT */
+    // Validate FDT
     if (fdt_check_header(fdt) != 0) {
         // uart_puts("DT: Invalid FDT header\n");
         return -1;
@@ -99,25 +77,32 @@ int device_tree_init(void *fdt) {
     return 0;
 }
 
-/* Get device type from compatible string */
+// Get device type from compatible string
 device_type_t device_tree_compatible_to_type(const char *compatible) {
     const device_type_map_t *map;
+    device_type_t arch_type;
     
     if (!compatible) {
         return DEV_TYPE_UNKNOWN;
     }
     
-    /* Search mapping table */
+    // First try architecture-specific detection
+    arch_type = arch_get_device_type(compatible);
+    if (arch_type != DEV_TYPE_UNKNOWN) {
+        return arch_type;
+    }
+    
+    // Fall back to generic device type mappings
     for (map = device_type_map; map->compatible; map++) {
         if (strstr(compatible, map->compatible) != NULL) {
             return map->type;
         }
     }
     
-    return DEV_TYPE_PLATFORM;  /* Default to platform device */
+    return DEV_TYPE_PLATFORM;  // Default to platform device
 }
 
-/* Get device type from node */
+// Get device type from node
 device_type_t device_tree_get_device_type(int node_offset) {
     const char *compatible;
     const char *device_type;
@@ -127,14 +112,14 @@ device_type_t device_tree_get_device_type(int node_offset) {
         return DEV_TYPE_UNKNOWN;
     }
     
-    /* First check device_type property */
+    // First check device_type property
     device_type = fdt_getprop(fdt_blob, node_offset, FDT_PROP_DEVICE_TYPE, &len);
     if (device_type) {
         if (strcmp(device_type, "cpu") == 0) return DEV_TYPE_CPU;
         if (strcmp(device_type, "memory") == 0) return DEV_TYPE_MEMORY;
     }
     
-    /* Then check compatible string */
+    // Then check compatible string
     compatible = fdt_getprop(fdt_blob, node_offset, FDT_PROP_COMPATIBLE, &len);
     if (compatible) {
         return device_tree_compatible_to_type(compatible);
@@ -143,7 +128,7 @@ device_type_t device_tree_get_device_type(int node_offset) {
     return DEV_TYPE_PLATFORM;
 }
 
-/* Check if device is enabled */
+// Check if device is enabled
 bool device_tree_is_device_enabled(int node_offset) {
     const char *status;
     int len;
@@ -152,19 +137,19 @@ bool device_tree_is_device_enabled(int node_offset) {
         return false;
     }
     
-    /* Get status property */
+    // Get status property
     status = fdt_getprop(fdt_blob, node_offset, FDT_PROP_STATUS, &len);
     if (!status) {
-        /* No status property means enabled */
+        // No status property means enabled
         return true;
     }
     
-    /* Check status value */
+    // Check status value
     return (strcmp(status, FDT_STATUS_OKAY) == 0 ||
             strcmp(status, "ok") == 0);
 }
 
-/* Get node name */
+// Get node name
 const char *device_tree_get_node_name(int node_offset) {
     if (!fdt_blob) {
         return NULL;
@@ -173,7 +158,7 @@ const char *device_tree_get_node_name(int node_offset) {
     return fdt_get_name(fdt_blob, node_offset, NULL);
 }
 
-/* Get compatible string */
+// Get compatible string
 const char *device_tree_get_compatible(int node_offset) {
     int len;
     
@@ -184,7 +169,7 @@ const char *device_tree_get_compatible(int node_offset) {
     return fdt_getprop(fdt_blob, node_offset, FDT_PROP_COMPATIBLE, &len);
 }
 
-/* Check if node is compatible with string */
+// Check if node is compatible with string
 bool device_tree_is_compatible(int node_offset, const char *compatible) {
     const char *node_compat;
     int len;
@@ -198,7 +183,7 @@ bool device_tree_is_compatible(int node_offset, const char *compatible) {
         return false;
     }
     
-    /* Compatible property can contain multiple strings */
+    // Compatible property can contain multiple strings
     while (len > 0) {
         if (strcmp(node_compat, compatible) == 0) {
             return true;
@@ -211,26 +196,26 @@ bool device_tree_is_compatible(int node_offset, const char *compatible) {
     return false;
 }
 
-/* Get number of reg entries */
+// Get number of reg entries
 int device_tree_get_reg_count(int node_offset) {
     const uint32_t *reg;
     int len;
     int parent;
-    int addr_cells = 2;  /* Default for 64-bit */
-    int size_cells = 2;  /* Default for 64-bit */
+    int addr_cells = 2;  // Default for 64-bit
+    int size_cells = 2;  // Default for 64-bit
     const uint32_t *prop;
     
     if (!fdt_blob) {
         return 0;
     }
     
-    /* Get reg property */
+    // Get reg property
     reg = fdt_getprop(fdt_blob, node_offset, FDT_PROP_REG, &len);
     if (!reg || len <= 0) {
         return 0;
     }
     
-    /* Get parent node to find #address-cells and #size-cells */
+    // Get parent node to find #address-cells and #size-cells
     parent = fdt_parent_offset(fdt_blob, node_offset);
     if (parent >= 0) {
         prop = fdt_getprop(fdt_blob, parent, FDT_PROP_ADDRESS_CELLS, NULL);
@@ -243,12 +228,12 @@ int device_tree_get_reg_count(int node_offset) {
         }
     }
     
-    /* Calculate number of entries */
+    // Calculate number of entries
     int entry_size = (addr_cells + size_cells) * sizeof(uint32_t);
     return len / entry_size;
 }
 
-/* Get reg entry by index */
+// Get reg entry by index
 bool device_tree_get_reg_by_index(int node_offset, int index,
                                  uint64_t *addr, uint64_t *size) {
     const uint32_t *reg;
@@ -263,13 +248,13 @@ bool device_tree_get_reg_by_index(int node_offset, int index,
         return false;
     }
     
-    /* Get reg property */
+    // Get reg property
     reg = fdt_getprop(fdt_blob, node_offset, FDT_PROP_REG, &len);
     if (!reg || len <= 0) {
         return false;
     }
     
-    /* Get parent node to find #address-cells and #size-cells */
+    // Get parent node to find #address-cells and #size-cells
     parent = fdt_parent_offset(fdt_blob, node_offset);
     if (parent >= 0) {
         prop = fdt_getprop(fdt_blob, parent, FDT_PROP_ADDRESS_CELLS, NULL);
@@ -282,23 +267,23 @@ bool device_tree_get_reg_by_index(int node_offset, int index,
         }
     }
     
-    /* Calculate entry size and check index */
+    // Calculate entry size and check index
     int entry_size = addr_cells + size_cells;
     int num_entries = len / (entry_size * sizeof(uint32_t));
     if (index >= num_entries) {
         return false;
     }
     
-    /* Skip to requested entry */
+    // Skip to requested entry
     reg += index * entry_size;
     
-    /* Extract address */
+    // Extract address
     *addr = 0;
     for (i = 0; i < addr_cells; i++) {
         *addr = (*addr << 32) | fdt32_to_cpu(reg[i]);
     }
     
-    /* Extract size */
+    // Extract size
     *size = 0;
     for (i = 0; i < size_cells; i++) {
         *size = (*size << 32) | fdt32_to_cpu(reg[addr_cells + i]);
@@ -307,7 +292,7 @@ bool device_tree_get_reg_by_index(int node_offset, int index,
     return true;
 }
 
-/* Parse reg property and add memory resources */
+// Parse reg property and add memory resources
 int device_tree_parse_reg(struct device *dev, int node_offset) {
     uint64_t addr, size;
     int count;
@@ -318,26 +303,26 @@ int device_tree_parse_reg(struct device *dev, int node_offset) {
         return -1;
     }
     
-    /* Get number of reg entries */
+    // Get number of reg entries
     count = device_tree_get_reg_count(node_offset);
     if (count == 0) {
         return 0;
     }
     
-    /* Add each reg entry as a memory resource */
+    // Add each reg entry as a memory resource
     for (i = 0; i < count && i < DEVICE_MAX_RESOURCES; i++) {
         if (!device_tree_get_reg_by_index(node_offset, i, &addr, &size)) {
             break;
         }
         
-        /* Create resource name */
+        // Create resource name
         if (count == 1) {
             snprintf(name, sizeof(name), "regs");
         } else {
             snprintf(name, sizeof(name), "regs%d", i);
         }
         
-        /* Add memory resource */
+        // Add memory resource
         device_add_mem_resource(dev, addr, size, RES_MEM_CACHEABLE, 
                                device_pool_strdup(name));
     }
@@ -345,7 +330,7 @@ int device_tree_parse_reg(struct device *dev, int node_offset) {
     return i;
 }
 
-/* Get number of interrupt entries */
+// Get number of interrupt entries
 int device_tree_get_interrupt_count(int node_offset) {
     const uint32_t *interrupts;
     int len;
@@ -354,17 +339,17 @@ int device_tree_get_interrupt_count(int node_offset) {
         return 0;
     }
     
-    /* Get interrupts property */
+    // Get interrupts property
     interrupts = fdt_getprop(fdt_blob, node_offset, FDT_PROP_INTERRUPTS, &len);
     if (!interrupts || len <= 0) {
         return 0;
     }
     
-    /* For now, assume 3 cells per interrupt (GIC style) */
+    // For now, assume 3 cells per interrupt (GIC style)
     return len / (3 * sizeof(uint32_t));
 }
 
-/* Get interrupt by index */
+// Get interrupt by index
 bool device_tree_get_interrupt_by_index(int node_offset, int index,
                                        uint32_t *irq, uint32_t *flags) {
     const uint32_t *interrupts;
@@ -375,39 +360,39 @@ bool device_tree_get_interrupt_by_index(int node_offset, int index,
         return false;
     }
     
-    /* Get interrupts property */
+    // Get interrupts property
     interrupts = fdt_getprop(fdt_blob, node_offset, FDT_PROP_INTERRUPTS, &len);
     if (!interrupts || len <= 0) {
         return false;
     }
     
-    /* For now, assume 3 cells per interrupt (GIC style) */
+    // For now, assume 3 cells per interrupt (GIC style)
     num_entries = len / (3 * sizeof(uint32_t));
     if (index >= num_entries) {
         return false;
     }
     
-    /* Skip to requested entry */
+    // Skip to requested entry
     interrupts += index * 3;
     
-    /* Extract interrupt info (GIC format) */
+    // Extract interrupt info (GIC format)
     uint32_t int_type = fdt32_to_cpu(interrupts[0]);
     uint32_t int_num = fdt32_to_cpu(interrupts[1]);
     uint32_t int_flags = fdt32_to_cpu(interrupts[2]);
     
-    /* Convert to linear IRQ number */
+    // Convert to linear IRQ number
     if (int_type == 0) {
-        /* SPI - add 32 to base */
+        // SPI - add 32 to base
         *irq = int_num + 32;
     } else if (int_type == 1) {
-        /* PPI - add 16 to base */
+        // PPI - add 16 to base
         *irq = int_num + 16;
     } else {
-        /* Unknown type */
+        // Unknown type
         *irq = int_num;
     }
     
-    /* Convert flags */
+    // Convert flags
     *flags = 0;
     if (int_flags & 0x0f) {
         if (int_flags & 0x01) {
@@ -427,7 +412,7 @@ bool device_tree_get_interrupt_by_index(int node_offset, int index,
     return true;
 }
 
-/* Parse interrupts property and add IRQ resources */
+// Parse interrupts property and add IRQ resources
 int device_tree_parse_interrupts(struct device *dev, int node_offset) {
     uint32_t irq, flags;
     int count;
@@ -438,33 +423,33 @@ int device_tree_parse_interrupts(struct device *dev, int node_offset) {
         return -1;
     }
     
-    /* Get number of interrupt entries */
+    // Get number of interrupt entries
     count = device_tree_get_interrupt_count(node_offset);
     if (count == 0) {
         return 0;
     }
     
-    /* Add each interrupt as an IRQ resource */
+    // Add each interrupt as an IRQ resource
     for (i = 0; i < count && dev->num_resources < DEVICE_MAX_RESOURCES; i++) {
         if (!device_tree_get_interrupt_by_index(node_offset, i, &irq, &flags)) {
             break;
         }
         
-        /* Create resource name */
+        // Create resource name
         if (count == 1) {
             snprintf(name, sizeof(name), "irq");
         } else {
             snprintf(name, sizeof(name), "irq%d", i);
         }
         
-        /* Add IRQ resource */
+        // Add IRQ resource
         device_add_irq_resource(dev, irq, flags, device_pool_strdup(name));
     }
     
     return i;
 }
 
-/* Create a device from FDT node */
+// Create a device from FDT node
 struct device *device_tree_create_device(int node_offset) {
     struct device *dev;
     const char *name;
@@ -475,20 +460,20 @@ struct device *device_tree_create_device(int node_offset) {
         return NULL;
     }
     
-    /* Check if device is enabled */
+    // Check if device is enabled
     if (!device_tree_is_device_enabled(node_offset)) {
         return NULL;
     }
     
-    /* Get node name */
+    // Get node name
     name = device_tree_get_node_name(node_offset);
     if (!name) {
         return NULL;
     }
     
-    /* Skip certain nodes */
+    // Skip certain nodes
     if (name[0] == '\0') {
-        /* Root node has empty name, skip it */
+        // Root node has empty name, skip it
         return NULL;
     }
     if (strcmp(name, "aliases") == 0 ||
@@ -499,38 +484,38 @@ struct device *device_tree_create_device(int node_offset) {
         return NULL;
     }
     
-    /* Get device type */
+    // Get device type
     type = device_tree_get_device_type(node_offset);
     
-    /* Register device */
+    // Register device
     dev = device_register(name, type);
     if (!dev) {
         return NULL;
     }
     
-    /* Set FDT information */
+    // Set FDT information
     dev->fdt_offset = node_offset;
     
-    /* Set compatible string */
+    // Set compatible string
     compatible = device_tree_get_compatible(node_offset);
     if (compatible) {
-        dev->compatible = compatible;  /* Points directly to FDT */
+        dev->compatible = compatible;  // Points directly to FDT
     }
     
-    /* Parse resources */
+    // Parse resources
     device_tree_parse_reg(dev, node_offset);
     device_tree_parse_interrupts(dev, node_offset);
     
     return dev;
 }
 
-/* Callback context for device enumeration */
+// Callback context for device enumeration
 typedef struct {
     struct device *parent;
     int count;
 } enum_context_t;
 
-/* Enumerate devices recursively */
+// Enumerate devices recursively
 static int enumerate_devices_recursive(int node_offset, int depth,
                                      struct device *parent) {
     struct device *dev;
@@ -546,7 +531,7 @@ static int enumerate_devices_recursive(int node_offset, int depth,
     // uart_puthex((uint64_t)parent);
     // uart_puts("\n");
     
-    /* Get node name for debugging */
+    // Get node name for debugging
     // uart_puts("DT: Calling fdt_get_name...\n");
     name = fdt_get_name(fdt_blob, node_offset, NULL);
     if (!name) {
@@ -560,8 +545,8 @@ static int enumerate_devices_recursive(int node_offset, int depth,
         // uart_puts("'\n");
     }
     
-    /* Debug output */
-    // if (depth < 3) {  /* Limit debug output to first few levels */
+    // Debug output
+    // if (depth < 3) {  // Limit debug output to first few levels
     //     int i;
     //     for (i = 0; i < depth; i++) {
     //         uart_puts("  ");
@@ -573,7 +558,7 @@ static int enumerate_devices_recursive(int node_offset, int depth,
     //     uart_puts("\n");
     // }
     
-    /* Create device for this node */
+    // Create device for this node
     // uart_puts("DT: Calling device_tree_create_device...\n");
     dev = device_tree_create_device(node_offset);
     if (dev) {
@@ -583,20 +568,20 @@ static int enumerate_devices_recursive(int node_offset, int depth,
     // uart_puts(dev->name);
     // uart_puts("'\n");
         
-        /* Set parent relationship */
+        // Set parent relationship
         if (parent) {
             // uart_puts("DT: Adding child to parent...\n");
             device_add_child(parent, dev);
         }
         count++;
         
-        /* Use this device as parent for children */
+        // Use this device as parent for children
         parent = dev;
     } else {
         // uart_puts("DT: No device created for this node\n");
     }
     
-    /* Process children */
+    // Process children
     // uart_puts("DT: Processing children with fdt_for_each_subnode...\n");
     fdt_for_each_subnode(child, fdt_blob, node_offset) {
         // uart_puts("DT: Found child at offset ");
@@ -612,7 +597,7 @@ static int enumerate_devices_recursive(int node_offset, int depth,
     return count;
 }
 
-/* Populate all devices from FDT */
+// Populate all devices from FDT
 int device_tree_populate_devices(void) {
     int root_offset;
     int count;
@@ -626,13 +611,13 @@ int device_tree_populate_devices(void) {
     // uart_puthex((uint64_t)fdt_blob);
     // uart_puts("\n");
     
-    /* Verify FDT is valid */
+    // Verify FDT is valid
     if (fdt_check_header(fdt_blob) != 0) {
         // uart_puts("DT: Invalid FDT header\n");
         return -1;
     }
     
-    /* Find root node */
+    // Find root node
     // uart_puts("DT: Finding root node...\n");
     root_offset = fdt_path_offset(fdt_blob, "/");
     if (root_offset < 0) {
@@ -648,7 +633,7 @@ int device_tree_populate_devices(void) {
     
     // uart_puts("DT: Enumerating devices from FDT...\n");
     
-    /* Get root device */
+    // Get root device
     struct device *root_dev = device_get_root();
     // uart_puts("DT: Got root device at ");
     // uart_puthex((uint64_t)root_dev);
@@ -659,7 +644,7 @@ int device_tree_populate_devices(void) {
     }
     // uart_puts("\n");
     
-    /* Enumerate all devices */
+    // Enumerate all devices
     // uart_puts("DT: Calling enumerate_devices_recursive...\n");
     count = enumerate_devices_recursive(root_offset, 0, root_dev);
     
@@ -670,7 +655,7 @@ int device_tree_populate_devices(void) {
     return count;
 }
 
-/* Find compatible node */
+// Find compatible node
 int device_tree_find_compatible_node(const char *compatible, int start_offset) {
     int node;
     
@@ -678,14 +663,14 @@ int device_tree_find_compatible_node(const char *compatible, int start_offset) {
         return -1;
     }
     
-    /* Start from next node or root */
+    // Start from next node or root
     if (start_offset < 0) {
         node = fdt_next_node(fdt_blob, -1, NULL);
     } else {
         node = fdt_next_node(fdt_blob, start_offset, NULL);
     }
     
-    /* Search for compatible node */
+    // Search for compatible node
     while (node >= 0) {
         if (device_tree_is_compatible(node, compatible)) {
             return node;
@@ -696,7 +681,7 @@ int device_tree_find_compatible_node(const char *compatible, int start_offset) {
     return -1;
 }
 
-/* Dump all enumerated devices */
+// Dump all enumerated devices
 void device_tree_dump_devices(void) {
     uart_puts("\nDevice Tree Dump:\n");
     uart_puts("=================\n");

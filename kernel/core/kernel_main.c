@@ -1,7 +1,7 @@
 /*
  * kernel/core/kernel_main.c
  *
- * Architecture-independent kernel initialization
+ * Kernel initialization (post arch init) 
  */
 
 #include <stdint.h>

@@ -10,9 +10,9 @@
 #include <device/device.h>
 #include <device/resource.h>
 
-/* ODroid-M2 / Rockchip RK3588S device memory map - MINIMAL for early boot only */
+// ODroid-M2 / Rockchip RK3588S device memory map - MINIMAL for early boot only
 static const devmap_entry_t odroid_m2_devmap[] = {
-    /* UART2 - Debug console - Required for early console */
+    // UART2 - Debug console - Required for early console
     {
         .name = "UART2",
         .phys_addr = 0xFEB50000,
@@ -20,7 +20,7 @@ static const devmap_entry_t odroid_m2_devmap[] = {
         .size = 0x1000,
         .attributes = DEVMAP_ATTR_DEVICE
     },
-    /* Terminator */
+    // Terminator
     { .size = 0 }
 };
 
@@ -29,7 +29,7 @@ static const platform_devmap_t odroid_m2_platform_devmap = {
     .entries = odroid_m2_devmap
 };
 
-/* Platform detection for ODroid-M2 */
+// Platform detection for ODroid-M2
 static int odroid_m2_detect(void)
 {
     /* Check if this is ODroid-M2 platform by looking for specific devices
@@ -47,11 +47,11 @@ static int odroid_m2_detect(void)
     return 0;
 }
 
-/* Platform descriptor */
+// Platform descriptor
 const platform_desc_t odroid_m2_platform = {
     .name = "ODroid-M2",
     .detect = odroid_m2_detect,
     .devmap = &odroid_m2_platform_devmap,
-    .console_uart_phys = 0xFEB50000,    /* UART2 - Debug console */
-    .console_uart_compatible = "rockchip,rk3588-uart" /* RK3588S UART */
+    .console_uart_phys = 0xFEB50000,    // UART2 - Debug console
+    .console_uart_compatible = "rockchip,rk3588-uart" // RK3588S UART
 };

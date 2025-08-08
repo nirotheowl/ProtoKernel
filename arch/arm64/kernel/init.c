@@ -1,19 +1,19 @@
 /*
  * arch/arm64/kernel/init.c
  *
- * ARM64-specific initialization
+ * ARM64 C entry and initialization
  */
 
 #include <stdint.h>
 #include <stddef.h>
 
-/* External symbols from linker script */
+// External symbols from linker script
 extern char _kernel_end;
 
-/* Forward declaration of common kernel_main */
+// Forward declaration of common kernel_main
 void kernel_main(void* dtb);
 
-/* ARM64-specific early initialization */
+// ARM64-specific early initialization
 void init_arm64(void* dtb) {
     /* 
      * At this point:
@@ -23,14 +23,14 @@ void init_arm64(void* dtb) {
      * - Stack is set up
      */
     
-    /* TODO: ARM64-specific initialization if needed */
-    /* For now, just call the common kernel_main */
+    // TODO: ARM64-specific initialization if needed
+    // For now, just call the common kernel_main
     
-    /* Jump to common kernel initialization */
+    // Jump to common kernel initialization
     kernel_main(dtb);
 }
 
-/* Get current exception level (ARM64-specific) */
+// Get current exception level (ARM64-specific)
 int arch_get_exception_level(void) {
     uint64_t current_el;
     __asm__ volatile("mrs %0, CurrentEL" : "=r" (current_el));

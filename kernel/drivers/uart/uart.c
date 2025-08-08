@@ -11,10 +11,44 @@
 #include <device/resource.h>
 #include <arch_interface.h>
 
-static volatile uint32_t *uart_base = NULL;
+static volatile void *uart_base = NULL;
+static const char *uart_compatible = NULL;
 
-#define UART0_DR   (uart_base[0x00/4])
-#define UART0_FR   (uart_base[0x18/4])
+// PL011 UART registers (ARM)
+#define PL011_DR    0x00
+#define PL011_FR    0x18
+#define PL011_FR_TXFF (1 << 5)  // Transmit FIFO Full
+#define PL011_FR_BUSY (1 << 3)  // UART Busy
+
+// NS16550 UART registers (common 16550-compatible)
+#define NS16550_THR  0x00  // Transmit Holding Register
+#define NS16550_LSR  0x05  // Line Status Register
+#define NS16550_LSR_THRE (1 << 5)  // Transmit Holding Register Empty
+#define NS16550_LSR_TEMT (1 << 6)  // Transmitter Empty
+
+// Helper function to check if a compatible string contains a substring
+static int uart_compat_contains(const char *compat, const char *substr) {
+    if (!compat || !substr) return 0;
+    
+    const char *p = compat;
+    const char *q;
+    
+    while (*p) {
+        q = substr;
+        const char *start = p;
+        
+        while (*p && *q && *p == *q) {
+            p++;
+            q++;
+        }
+        
+        if (!*q) return 1;  // Found match
+        
+        p = start + 1;
+    }
+    
+    return 0;
+}
 
 void uart_init(void) {
     const platform_desc_t *platform = platform_get_current();
@@ -32,7 +66,8 @@ void uart_init(void) {
         if (uart_dev) {
             struct resource *res = device_get_resource(uart_dev, RES_TYPE_MEM, 0);
             if (res && res->mapped_addr) {
-                uart_base = (volatile uint32_t *)res->mapped_addr;
+                uart_base = res->mapped_addr;
+                uart_compatible = platform->console_uart_compatible;
                 uart_puts("UART: Using ");
                 uart_puts(platform->console_uart_compatible);
                 uart_puts(" at VA ");
@@ -48,7 +83,8 @@ void uart_init(void) {
     // Try direct physical address lookup
     void *va = devmap_device_va(platform->console_uart_phys);
     if (va) {
-        uart_base = (volatile uint32_t *)va;
+        uart_base = va;
+        uart_compatible = platform->console_uart_compatible;  // May be NULL
         uart_puts("UART: Using device at PA ");
         uart_puthex(platform->console_uart_phys);
         uart_puts(" (no compatible string match)\n");
@@ -65,19 +101,50 @@ void uart_putc(char c) {
         return;
     }
     
-    // Wait for transmit FIFO to not be full
-    while (UART0_FR & (1 << 5)) {
-        arch_io_nop();
-    }
-    
-    UART0_DR = c;
-    
-    // Ensure the write completes to device memory
-    arch_io_barrier();
-    
-    // Wait for transmit to complete
-    while (UART0_FR & (1 << 3)) {
-        arch_io_nop();
+    // Determine UART type and use appropriate registers
+    if (uart_compatible && 
+        (uart_compat_contains(uart_compatible, "ns16550") ||
+         uart_compat_contains(uart_compatible, "16550") ||
+         uart_compat_contains(uart_compatible, "8250"))) {
+        // NS16550-compatible UART (common for x86, RISC-V, some ARM)
+        volatile uint8_t *uart = (volatile uint8_t *)uart_base;
+        
+        // Wait for transmit holding register to be empty
+        while (!(uart[NS16550_LSR] & NS16550_LSR_THRE)) {
+            arch_io_nop();
+        }
+        
+        // Write the character
+        uart[NS16550_THR] = c;
+        
+        // Ensure the write completes
+        arch_io_barrier();
+        
+        // Wait for transmitter to be empty
+        while (!(uart[NS16550_LSR] & NS16550_LSR_TEMT)) {
+            arch_io_nop();
+        }
+    } else {
+        // Default to PL011 for ARM platforms (QEMU virt, most ARM boards)
+        /* This includes "arm,pl011", "arm,sbsa-uart", and Rockchip UARTs 
+         * which are often PL011-compatible */
+        volatile uint32_t *uart = (volatile uint32_t *)uart_base;
+        
+        // Wait for transmit FIFO to not be full
+        while (uart[PL011_FR/4] & PL011_FR_TXFF) {
+            arch_io_nop();
+        }
+        
+        // Write the character
+        uart[PL011_DR/4] = c;
+        
+        // Ensure the write completes to device memory
+        arch_io_barrier();
+        
+        // Wait for transmit to complete
+        while (uart[PL011_FR/4] & PL011_FR_BUSY) {
+            arch_io_nop();
+        }
     }
 }
 

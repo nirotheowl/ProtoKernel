@@ -71,4 +71,4 @@ static inline int spin_is_locked(spinlock_t *lock) {
     return lock->lock != 0;
 }
 
-#endif /* _ARM64_ARCH_SPINLOCK_H_ */
+#endif // _ARM64_ARCH_SPINLOCK_H_
