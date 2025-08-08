@@ -1,7 +1,7 @@
 /*
  * kernel/include/memory/vmparam.h
  *
- * Virtual memory parameters for ARM64
+ * Virtual memory parameters - architecture independent interface
  * Following FreeBSD conventions where applicable
  */
 
@@ -10,17 +10,17 @@
 
 #include <stdint.h>
 
+// Include architecture-specific virtual memory parameters
+#include <arch_vmparam.h>
 
-// Kernel virtual and physical base addresses
-#define KERNEL_VIRT_BASE    0xFFFF000040200000ULL
+// Map architecture-specific constants to generic names
+#define KERNEL_VIRT_BASE    ARCH_KERNEL_VIRT_BASE
+#define DEVICE_VIRT_BASE    ARCH_DEVICE_VIRT_BASE
+#define DMAP_BASE           ARCH_DMAP_VIRT_BASE
+#define DMAP_SIZE           ARCH_DMAP_SIZE
+
+// Kernel physical base - this is platform/board specific, not architecture specific
 #define KERNEL_PHYS_BASE    0x40200000ULL
-
-// For now, we use a simple direct mapping for kernel space.
-// The kernel is loaded at KERNEL_PHYS_BASE and mapped to KERNEL_VIRT_BASE.
-// 
-// Unlike FreeBSD's separate DMAP region, we currently map:
-// - Kernel code/data: KERNEL_PHYS_BASE -> KERNEL_VIRT_BASE
-// - Device memory: Physical addresses -> 0xFFFF0000xxxxxxxx
 
 // Convert kernel virtual address to physical address
 #define PHYS_TO_VIRT(pa) \
@@ -34,16 +34,9 @@
 #define VIRT_IN_KERN(va) \
     ((uint64_t)(va) >= KERNEL_VIRT_BASE)
 
-// Device memory base in virtual space
-#define DEVICE_VIRT_BASE    0xFFFF000000000000ULL
-
 // Physical memory base - now dynamic, set at runtime
 extern uint64_t dmap_phys_base;
 extern uint64_t dmap_phys_max;
-
-// DMAP (Direct Map) region configuration
-#define DMAP_BASE           0xFFFFA00000000000ULL  /* Direct map base address (FreeBSD standard) */
-#define DMAP_SIZE           0x0000600000000000ULL  /* 96TB direct map region */
 
 // Convert physical address to DMAP virtual address
 #define PHYS_TO_DMAP(pa)    ({ \

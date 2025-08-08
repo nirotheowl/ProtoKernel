@@ -2,7 +2,7 @@
 
 # Run kernel with U-Boot in QEMU
 
-KERNEL_BIN="build/kernel.bin"
+KERNEL_BIN="build/arm64/kernel.bin"
 UBOOT_BIN="reference/u-boot/u-boot.bin"
 
 if [ ! -f "$KERNEL_BIN" ]; then

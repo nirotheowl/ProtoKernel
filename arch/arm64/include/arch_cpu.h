@@ -17,6 +17,11 @@ static inline void arch_wait_for_event(void) {
     __asm__ volatile("wfe");
 }
 
+// CPU wait/idle (architecture-independent name)
+static inline void arch_cpu_wait(void) {
+    __asm__ volatile("wfe");
+}
+
 // Halt the CPU
 static inline void arch_halt(void) {
     arch_disable_interrupts();

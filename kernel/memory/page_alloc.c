@@ -3,15 +3,6 @@
  *
  * Page-level allocator implementation using buddy system
  * 
- * THREAD SAFETY:
- * This allocator is NOT thread-safe. Callers must provide external
- * synchronization (e.g., spinlocks) when used in multi-threaded contexts.
- * 
- * INVARIANTS:
- * - All blocks are aligned to PAGE_SIZE
- * - Buddy blocks can only be coalesced if they have the same order
- * - Each chunk maintains a list of blocks, some allocated, some free
- * - Empty chunks are automatically returned to PMM to reduce memory waste
  */
 
 #include <memory/page_alloc.h>

@@ -91,7 +91,7 @@ void kernel_main(void* dtb) {
    
     // KERNEL LOGS START HERE! 
     uart_puts("\n=======================================\n");
-    uart_puts("ARM64 Kernel Booting...\n");
+    uart_puts("ProtoKernel Booting...\n");
     uart_puts("=======================================\n\n");
     
     uart_puts("Kernel entry point: kernel_main()\n");
@@ -163,6 +163,6 @@ void kernel_main(void* dtb) {
     uart_puts("System halted.\n");
     
     while (1) {
-        __asm__ volatile("wfe");
+        arch_cpu_wait();
     }
 }

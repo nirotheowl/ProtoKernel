@@ -4,7 +4,6 @@
  * Kernel memory allocator interface
  * Provides variable-size memory allocation built on top of slab allocator
  * 
- * REVISED: Zero-overhead design for slab allocations
  */
 
 #ifndef _KMALLOC_H_
