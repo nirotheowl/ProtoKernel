@@ -10,6 +10,12 @@
 // External symbols from linker script
 extern char _kernel_end;
 
+// External symbol from boot.S - contains detected physical base
+extern uint64_t phys_base_storage;
+
+// Global kernel physical base (used by VIRT_TO_PHYS/PHYS_TO_VIRT macros)
+uint64_t kernel_phys_base;
+
 // Forward declaration of common kernel_main
 void kernel_main(void* dtb);
 
@@ -23,8 +29,10 @@ void init_arm64(void* dtb) {
      * - Stack is set up
      */
     
-    // TODO: ARM64-specific initialization if needed
-    // For now, just call the common kernel_main
+    // Initialize kernel physical base from boot.S detected value
+    // phys_base_storage was set in physical memory, but we can read it
+    // because we have identity mapping for the kernel region
+    kernel_phys_base = phys_base_storage;
     
     // Jump to common kernel initialization
     kernel_main(dtb);

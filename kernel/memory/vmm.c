@@ -33,6 +33,53 @@ static vmm_context_t kernel_context;
 static bool vmm_initialized = false;
 static bool dmap_ready = false;
 
+/* Helper to convert page table physical address to virtual 
+ * Boot page tables are in kernel physical range and use PHYS_TO_VIRT
+ * New page tables allocated from PMM need DMAP access
+ */
+static inline void* pt_phys_to_virt(uint64_t phys) {
+    /* Check if in kernel physical range (boot page tables only) */
+    /* Boot page tables are from kernel_phys_base + text/data to about +64KB */
+    if (phys >= kernel_phys_base && phys < (kernel_phys_base + 0x40000)) {
+        /* Boot page tables - use kernel virtual mapping */
+        return (void*)PHYS_TO_VIRT(phys);
+    } else if (dmap_ready) {
+        /* New page tables - use DMAP */
+        uint64_t va = PHYS_TO_DMAP(phys);
+        if (va == 0) {
+            uart_puts("ERROR: pt_phys_to_virt - PHYS_TO_DMAP failed for PA ");
+            uart_puthex(phys);
+            uart_puts("\n");
+            return NULL;
+        }
+        return (void*)va;
+    } else {
+        /* Before DMAP, use kernel virtual mapping if in extended kernel range */
+        if (phys >= kernel_phys_base && phys < (kernel_phys_base + 0x8000000)) {
+            return (void*)PHYS_TO_VIRT(phys);
+        }
+        /* Otherwise assume identity mapped */
+        return (void*)phys;
+    }
+}
+
+/* Helper to convert page table virtual address to physical */
+static inline uint64_t pt_virt_to_phys(void *virt) {
+    uint64_t va = (uint64_t)virt;
+    
+    /* Check if in DMAP range first */
+    if (va >= DMAP_BASE && va < (DMAP_BASE + (dmap_phys_max - dmap_phys_base))) {
+        /* In DMAP - convert to physical */
+        return va - DMAP_BASE + dmap_phys_base;
+    } else if (va >= KERNEL_VIRT_BASE && va < (KERNEL_VIRT_BASE + 0x40000000)) {
+        /* In kernel virtual range */
+        return VIRT_TO_PHYS(va);
+    } else {
+        /* Assume identity mapped */
+        return va;
+    }
+}
+
 /* Page table entry attribute conversion */
 static uint64_t vmm_attrs_to_pte(uint64_t attrs) {
     uint64_t pte = PTE_AF;
@@ -187,7 +234,7 @@ static uint64_t* vmm_walk_create(vmm_context_t *ctx, uint64_t vaddr, int target_
             }
             
             /* Set table descriptor */
-            uint64_t phys = VIRT_TO_PHYS((uint64_t)new_table);
+            uint64_t phys = pt_virt_to_phys(new_table);
             *pte = phys | PTE_TYPE_TABLE | PTE_VALID;
             
             /* Ensure write is visible */
@@ -196,7 +243,7 @@ static uint64_t* vmm_walk_create(vmm_context_t *ctx, uint64_t vaddr, int target_
         
         /* Move to next level */
         uint64_t next_table_phys = *pte & PTE_ADDR_MASK;
-        table = (uint64_t*)PHYS_TO_VIRT(next_table_phys);
+        table = (uint64_t*)pt_phys_to_virt(next_table_phys);
     }
     
     return vmm_get_pte(table, vaddr, target_level);
@@ -248,10 +295,7 @@ uint64_t* vmm_alloc_page_table(void) {
     // uart_puts("\n");
     
     /* Convert to virtual address and clear */
-    uint64_t *table = (uint64_t*)PHYS_TO_VIRT(phys);
-    // uart_puts("  Virtual address: ");
-    // uart_puthex((uint64_t)table);
-    // uart_puts("\n");
+    uint64_t *table = (uint64_t*)pt_phys_to_virt(phys);
     
     // uart_puts("  Clearing page with memset...\n");
     memset(table, 0, PAGE_SIZE);
@@ -262,7 +306,7 @@ uint64_t* vmm_alloc_page_table(void) {
 
 /* Free a page table back to PMM */
 void vmm_free_page_table(uint64_t *table) {
-    uint64_t phys = VIRT_TO_PHYS((uint64_t)table);
+    uint64_t phys = pt_virt_to_phys(table);
     pmm_free_page(phys);
 }
 
@@ -420,7 +464,7 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
                         uart_puts("VMM: Failed to allocate L3 table\n");
                         return false;
                     }
-                    uint64_t phys = VIRT_TO_PHYS((uint64_t)new_table);
+                    uint64_t phys = pt_virt_to_phys(new_table);
                     // uart_puts("  New L3 table at VA ");
                     // uart_puthex((uint64_t)new_table);
                     // uart_puts(" PA ");
@@ -440,7 +484,7 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
                 // uart_puthex(l3_phys);
                 // uart_puts("\n");
                 
-                cached_l3_table = (uint64_t*)PHYS_TO_VIRT(l3_phys);
+                cached_l3_table = (uint64_t*)pt_phys_to_virt(l3_phys);
                 cached_l3_base = l3_base;
                 
                 // uart_puts("  Cached L3 table at VA ");
@@ -517,7 +561,7 @@ bool vmm_unmap_page(vmm_context_t *ctx, uint64_t vaddr) {
             return true;
         }
         
-        table = (uint64_t*)PHYS_TO_VIRT(*pte & PTE_ADDR_MASK);
+        table = (uint64_t*)pt_phys_to_virt(*pte & PTE_ADDR_MASK);
     }
     
     /* Check L3 entry */
@@ -672,7 +716,7 @@ uint64_t vmm_virt_to_phys(vmm_context_t *ctx, uint64_t vaddr) {
             return (*pte & PTE_ADDR_MASK) | (vaddr & ~mask);
         }
         
-        table = (uint64_t*)PHYS_TO_VIRT(*pte & PTE_ADDR_MASK);
+        table = (uint64_t*)pt_phys_to_virt(*pte & PTE_ADDR_MASK);
     }
     
     return 0;
@@ -726,7 +770,7 @@ void vmm_debug_walk(vmm_context_t *ctx, uint64_t vaddr) {
         }
         
         uart_puts(" (table)\n");
-        table = (uint64_t*)PHYS_TO_VIRT(*pte & PTE_ADDR_MASK);
+        table = (uint64_t*)pt_phys_to_virt(*pte & PTE_ADDR_MASK);
     }
 }
 

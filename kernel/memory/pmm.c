@@ -442,8 +442,10 @@ void pmm_print_stats(void) {
     uart_puts("\nReserved Regions:\n");
     uart_puts("-----------------\n");
     
-    // Show kernel reservation
-    uart_puts("Kernel:           0x40000000 - ");
+    // Show kernel reservation (use dynamic kernel_phys_base)
+    uart_puts("Kernel:           ");
+    uart_puthex(kernel_phys_base);
+    uart_puts(" - ");
     uart_puthex(VIRT_TO_PHYS((uint64_t)&_kernel_end));
     uart_puts("\n");
     

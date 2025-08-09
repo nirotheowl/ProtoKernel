@@ -65,8 +65,28 @@ void devmap_init(void)
         return;
     }
     
+    /* Debug: Check DMAP range */
+    uart_puts("DEVMAP: Allocated phys addr: ");
+    uart_puthex(phys_addr);
+    uart_puts("\n");
+    uart_puts("DEVMAP: DMAP range: ");
+    uart_puthex(dmap_phys_base);
+    uart_puts(" - ");
+    uart_puthex(dmap_phys_max);
+    uart_puts("\n");
+    
     /* Map the allocated pages using DMAP */
     devmap_table = (struct devmap_table_entry *)PHYS_TO_DMAP(phys_addr);
+    
+    uart_puts("DEVMAP: Virtual addr: ");
+    uart_puthex((uint64_t)devmap_table);
+    uart_puts("\n");
+    
+    if (devmap_table == NULL) {
+        uart_puts("DEVMAP: ERROR - PHYS_TO_DMAP returned NULL!\n");
+        uart_puts("DEVMAP: Physical address outside DMAP range\n");
+        return;
+    }
     
     /* Clear device mapping table */
     memset(devmap_table, 0, table_size);

@@ -19,16 +19,19 @@
 #define DMAP_BASE           ARCH_DMAP_VIRT_BASE
 #define DMAP_SIZE           ARCH_DMAP_SIZE
 
-// Kernel physical base - this is platform/board specific, not architecture specific
-#define KERNEL_PHYS_BASE    0x40200000ULL
+// Kernel physical base - dynamically detected at boot time
+extern uint64_t kernel_phys_base;
+
+// For backward compatibility during transition
+#define KERNEL_PHYS_BASE    kernel_phys_base
 
 // Convert kernel virtual address to physical address
 #define PHYS_TO_VIRT(pa) \
-    ((uint64_t)(pa) - KERNEL_PHYS_BASE + KERNEL_VIRT_BASE)
+    ((uint64_t)(pa) - kernel_phys_base + KERNEL_VIRT_BASE)
 
 // Convert physical address to kernel virtual address
 #define VIRT_TO_PHYS(va) \
-    ((uint64_t)(va) - KERNEL_VIRT_BASE + KERNEL_PHYS_BASE)
+    ((uint64_t)(va) - KERNEL_VIRT_BASE + kernel_phys_base)
 
 // Check if an address is in kernel virtual space
 #define VIRT_IN_KERN(va) \

@@ -26,7 +26,7 @@ fi
 # Define paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-BUILD_DIR="$PROJECT_ROOT/build"
+BUILD_DIR="$PROJECT_ROOT/build/arm64"
 KERNEL_BIN="$BUILD_DIR/kernel.bin"
 KERNEL_ELF="$BUILD_DIR/kernel.elf"
 
@@ -66,7 +66,7 @@ qemu-system-aarch64 \
     -cpu cortex-a72 \
     -nographic \
     -smp 1 \
-    -m 256M \
+    -m 1G \
     -kernel "$KERNEL_BIN" \
     -S \
     -gdb tcp::1234 &

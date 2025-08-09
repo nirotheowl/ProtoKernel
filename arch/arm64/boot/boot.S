@@ -2,7 +2,7 @@
  * arch/arm64/boot/boot.S
  * 
  * Author:  Michael W. Lloyd
- * Date: 2025-07-25
+ * Date: 2025-08-09
  * 
  * Description: 64-bit ARM kernel bootstrap code implementing higher-half
  *              virtual memory with MMU setup, page table creation, and
@@ -20,6 +20,8 @@
 
 /* Import exception vectors from exceptions.S */
 .extern exception_vectors
+
+/* Early debug support removed - kernel uses proper UART after MMU enable */
 
 /*
  * ARMv8 Page Table Configuration
@@ -107,6 +109,8 @@ el2_entry:
     eret
 
 el1_entry:
+    /* Boot sequence starts here */
+    
     /* Disable MMU and caches before setup */
     mrs x0, sctlr_el1
     bic x0, x0, #(1 << 0)   /* Clear M bit (MMU) */
@@ -121,14 +125,21 @@ el1_entry:
     dsb nsh
     isb
 
-    
-    /* Get our actual physical load address */
+    /* Get our actual physical load address dynamically */
     adr x28, _start         /* Get PC-relative address (physical) */
-    ldr x29, =_start        /* Get absolute address from linker (virtual) */
-    ldr x30, =KERNEL_VIRT_BASE
-    sub x29, x29, x30       /* Get offset from virtual base */
-    sub x28, x28, x29       /* Calculate physical base address */
-    /* Now x28 = physical address where kernel is loaded */
+    and x28, x28, #~0x1FFFFF  /* Align down to 2MB boundary */
+    /* Now x28 = 2MB-aligned physical base address where kernel is loaded */
+    
+    /* Store physical base for later use */
+    adr x0, phys_base_storage
+    str x28, [x0]
+    
+    /* Physical base is now in x28 */
+    
+    /* Calculate the region we will identity map (needed for DTB check) */
+    mov x15, x28                          /* Get kernel physical base */
+    and x15, x15, #~0x3FFFFFF            /* Align down to 64MB boundary */
+    /* x15 = start of region to map */
     
     /*
      * Copy DTB to a safe location if needed
@@ -138,10 +149,18 @@ el1_entry:
     mov x0, x27                           /* x0 = DTB pointer from x27 */
     cbz x0, .Lno_dtb                     /* Skip if no DTB */
     
-    /* Check if DTB is outside identity-mapped region (>= 1GB) */
-    mov x1, #0x40000000                   /* 1GB boundary */
+    /* Check if DTB is within our identity-mapped region (x15 to x15+128MB) */
+    mov x1, x15                           /* Get start of mapped region */
     cmp x0, x1
-    b.lo .Ldtb_ok                        /* DTB is in mapped region, no need to copy */
+    b.lo .Ldtb_needs_copy                /* DTB below mapped region */
+    mov x1, #128                          /* 128MB */
+    lsl x1, x1, #20                       /* Shift left by 20 to get 128MB */
+    add x1, x15, x1                       /* Add to get end of region */
+    cmp x0, x1
+    b.hs .Ldtb_needs_copy                /* DTB above mapped region */
+    b .Ldtb_ok                           /* DTB is in mapped region */
+    
+.Ldtb_needs_copy:
     
     /* DTB needs to be copied - place it after kernel end */
     adr x1, _kernel_end                   /* Get physical address of kernel end */
@@ -250,49 +269,44 @@ el1_entry:
     add x25, x25, #PAGE_SIZE
 
     /* Create identity mapping using 2MB blocks.
-     * We'll map the first 1GB of physical memory. */
+     * Map 128MB region around where kernel is loaded.
+     * This handles various load addresses and memory configurations. */
+    
+    /* x15 already contains the start of region to map (calculated earlier) */
+    
+    /* Calculate L0 index (bits 47:39) - will be 0 for addresses < 512GB */
+    lsr x14, x15, #L0_SHIFT
+    and x14, x14, #0x1FF                  /* Mask to 9 bits */
+    
+    /* Calculate L1 index (bits 38:30) - which GB region */
+    lsr x13, x15, #L1_SHIFT  
+    and x13, x13, #0x1FF                  /* Mask to 9 bits */
     
     /* Step 1: L0 entry pointing to L1 */
     mov x0, x22                           /* L1 table physical address */
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
-    str x0, [x23]                         /* Store in L0[0] */
+    lsl x1, x14, #3                       /* L0 index * 8 */
+    str x0, [x23, x1]                     /* Store in L0[index] */
     
-    /* Step 2: L1 entries pointing to L2 tables */
-    /* L1[0] for 0-512MB */
+    /* Step 2: L1 entry pointing to L2 table */
     mov x0, x21                           /* L2 table physical address */
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
-    str x0, [x22]                         /* Store in L1[0] */
-    
-    /* L1[1] for 512MB-1GB (where kernel is) */
-    mov x0, x20                           /* L2 table physical address */
-    orr x0, x0, #TABLE_DESC               /* Table descriptor */
-    str x0, [x22, #8]                     /* Store in L1[1] */
+    lsl x1, x13, #3                       /* L1 index * 8 */
+    str x0, [x22, x1]                     /* Store in L1[index] */
     
     /* Step 3: L2 entries as 2MB blocks */
-    /* First map 256 * 2MB = 512MB starting from physical address 0 */
-    mov x0, #0                            /* Physical address */
+    /* Map 64 * 2MB = 128MB starting from aligned base */
+    mov x0, x15                           /* Physical address to map */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */
     mov x2, x21                           /* L2 table base */
-    mov x3, #256                          /* Number of 2MB blocks */
+    mov x3, #64                           /* Number of 2MB blocks (128MB total) */
     
 1:  orr x4, x0, x1                        /* Combine address and attributes */
     str x4, [x2], #8                      /* Store and increment pointer */
     add x0, x0, #L2_BLOCK_SIZE            /* Next 2MB block */
     subs x3, x3, #1                       /* Decrement counter */
     b.ne 1b
-    
-    /* Now map second 512MB */
-    /* L1[1] covers second 512MB region */
-    mov x0, #0x40000000                   /* Start at 1GB */
-    mov x2, x20                           /* L2 table base for second 512MB */
-    mov x3, #256                          /* Number of 2MB blocks */
-    
-2:  orr x4, x0, x1                        /* Combine address and attributes */
-    str x4, [x2], #8                      /* Store and increment pointer */
-    add x0, x0, #L2_BLOCK_SIZE            /* Next 2MB block */
-    subs x3, x3, #1                       /* Decrement counter */
-    b.ne 2b
 
     /*
      * Create Higher-Half Mapping Page Tables (TTBR1)
@@ -333,39 +347,33 @@ el1_entry:
     str x0, [x18, #8]                     /* Store in L1[1] (index 1) */
     
     /* Step 3: L2 entries for kernel mapping
-     * Map from where we're loaded (x28 contains physical base).
+     * Map from where we're actually loaded (x28 contains physical base).
      * Using 2MB blocks, aligned to 2MB boundary.
-     * Map 32 consecutive 2MB blocks for 64MB total coverage. 
-     * 
-     * The mapping is as follows:
-     * - L2[0] should map physical 0x40000000 (not used by kernel)
-     * - L2[1] should map physical 0x40200000 (where kernel is)
-     * - L2[2] should map physical 0x40400000, etc.
+     * Calculate the correct L2 index based on kernel's position within 1GB region.
+     * This maps the physical kernel location to the expected virtual addresses.
      */
-    mov x0, #0x40000000                   /* Start from 2MB-aligned base */
+    
+    /* Calculate L2 starting index: (x28 & 0x3FFFFFFF) >> 21 */
+    mov x12, x28                          /* Get physical base */
+    and x12, x12, #0x3FFFFFFF            /* Mask to get offset within 1GB */
+    lsr x12, x12, #L2_SHIFT               /* Divide by 2MB to get L2 index */
+    
+    /* Calculate starting position in L2 table */
+    mov x2, x17                           /* L2 table base */
+    lsl x11, x12, #3                      /* L2 index * 8 bytes per entry */
+    add x2, x2, x11                       /* Point to correct L2 entry */
+    
+    /* Map 64 consecutive 2MB blocks for 128MB total coverage */
+    mov x0, x28                           /* Start from detected physical base */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */
-    mov x2, x17                           /* L2 table base */
-    mov x3, #32                           /* 32 * 2MB = 64MB */
+    mov x3, #64                           /* 64 * 2MB = 128MB */
     
 3:  orr x4, x0, x1                        /* Combine address and attributes */
     str x4, [x2], #8                      /* Store and increment pointer */
     add x0, x0, #L2_BLOCK_SIZE            /* Next 2MB physical block */
     subs x3, x3, #1                       /* Decrement counter */
     b.ne 3b
-
-    /* Step 4: Temporary UART mapping for debugging - COMMENTED OUT
-     * Map UART at physical 0x09000000 to virtual 0xFFFF000009000000
-     * This is now handled by devmap system after proper initialization
-     * 
-     * mov x0, #0x09000000
-     * mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_DEVICE | ATTR_AP_RW_EL1
-     * orr x1, x1, #ATTR_UXN | ATTR_PXN
-     * orr x1, x1, #BLOCK_DESC
-     * orr x4, x0, x1
-     * mov x2, x16
-     * str x4, [x2, #(72 * 8)]
-     */
 
     /* Configure MAIR_EL1 (Memory Attribute Indirection Register)
      * MAIR_EL1 defines memory types for use in page table entries:
@@ -414,6 +422,8 @@ el1_entry:
     msr vbar_el1, x0
     isb
 
+    /* Initialize MMU page tables */
+
     /* Enable MMU in SCTLR_EL1
      * M bit (0): MMU enable
      * C bit (2): D-cache enable
@@ -424,6 +434,8 @@ el1_entry:
     orr x0, x0, #(1 << 12)                /* I bit (I-cache enable) */
     msr sctlr_el1, x0
     isb
+
+    /* MMU is now enabled, running at virtual addresses */
 
     /* We're now running with identity mapping!
      * Time to jump to higher half addresses. */
@@ -442,9 +454,9 @@ el1_entry:
 higher_half:
     /* We're now running at virtual addresses in the higher half! */
     
-    /* Set up stack pointer using virtual address */
-    ldr x0, =_start
-    sub x0, x0, #0x10000                  /* 64KB stack below code */
+    /* Set up stack pointer using the pre-allocated stack in .data section
+     * This avoids assumptions about memory layout */
+    ldr x0, =_stack_top                   /* Use the stack defined in .data */
     mov sp, x0
 
     /* Pass DTB pointer to init_arm64 */
@@ -473,4 +485,10 @@ _stack_bottom:
     .skip 4096 * 4   /* 16KB stack */
 .global _stack_top
 _stack_top:
+
+/* Storage for dynamically detected physical base address */
+.align 3
+.global phys_base_storage
+phys_base_storage:
+    .quad 0
 

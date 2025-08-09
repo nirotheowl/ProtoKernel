@@ -68,13 +68,7 @@ void uart_init(void) {
             if (res && res->mapped_addr) {
                 uart_base = res->mapped_addr;
                 uart_compatible = platform->console_uart_compatible;
-                uart_puts("UART: Using ");
-                uart_puts(platform->console_uart_compatible);
-                uart_puts(" at VA ");
-                uart_puthex((uint64_t)res->mapped_addr);
-                uart_puts(" (PA ");
-                uart_puthex(res->start);
-                uart_puts(")\n");
+                // Debug output removed - uart_base not yet set
                 return;
             }
         }
@@ -85,9 +79,7 @@ void uart_init(void) {
     if (va) {
         uart_base = va;
         uart_compatible = platform->console_uart_compatible;  // May be NULL
-        uart_puts("UART: Using device at PA ");
-        uart_puthex(platform->console_uart_phys);
-        uart_puts(" (no compatible string match)\n");
+        // Debug output removed - uart_base not yet set
         return;
     }
     
