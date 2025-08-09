@@ -1,5 +1,5 @@
 /*
- * kernel/platform/odroid_m2.c
+ * arch/arm64/platform/odroid_m2.c
  *
  * Platform support for ODroid-M2 (Rockchip RK3588S)
  */

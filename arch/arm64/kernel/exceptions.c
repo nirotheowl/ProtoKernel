@@ -1,7 +1,7 @@
 /*
- * kernel/exceptions/exceptions.c
+ * arch/arm64/kernel/exceptions.c
  *
- * Exception and interrupt handling implementation
+ * ARM64 exception and interrupt handling implementation
  */
 
 #include <stdint.h>

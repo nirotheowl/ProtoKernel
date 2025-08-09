@@ -1,5 +1,5 @@
 /*
- * kernel/include/spinlock.h
+ * arch/arm64/include/arch_spinlock.h
  *
  * Simple spinlock implementation for ARM64
  * Uses compiler built-in atomic operations

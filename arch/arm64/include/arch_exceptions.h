@@ -1,7 +1,7 @@
 /*
- * kernel/include/exceptions/exceptions.h
+ * arch/arm64/include/arch_exceptions.h
  *
- * Exception handling constants and interfaces
+ * ARM64 exception handling constants and interfaces
  */
 
 #ifndef EXCEPTIONS_H

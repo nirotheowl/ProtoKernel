@@ -1,5 +1,5 @@
 /*
- * kernel/platform/qemu_virt.c
+ * arch/arm64/platform/qemu_virt.c
  *
  * Platform support for QEMU virt machine (AArch64)
  */
