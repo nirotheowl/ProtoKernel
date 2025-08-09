@@ -1,36 +1,38 @@
 ENTRY(_start)
 
 /* Higher-half kernel configuration */
-KERNEL_PHYS_BASE = 0x40200000;  /* Physical load address */
 KERNEL_VIRT_BASE = 0xFFFF000040200000;  /* Virtual address in higher half */
+PHYS_OFFSET = 0x200000;                  /* 2MB offset where kernel starts relative to load base */
+
+/* Calculate the virtual-to-physical offset */
+VIRT_TO_PHYS_OFFSET = KERNEL_VIRT_BASE - PHYS_OFFSET;
 
 SECTIONS
 {
-    /* AT() directive: load at physical address, run at virtual address */
     . = KERNEL_VIRT_BASE;
 
     __text_start = .;
-    .text : AT(ADDR(.text) - KERNEL_VIRT_BASE + KERNEL_PHYS_BASE) {
+    .text : AT(ADDR(.text) - VIRT_TO_PHYS_OFFSET) {
         KEEP(*(.text.boot))
         *(.text .text.*)
     }
     __text_end = .;
 
     . = ALIGN(4096);
-    .rodata : AT(ADDR(.rodata) - KERNEL_VIRT_BASE + KERNEL_PHYS_BASE) {
+    .rodata : AT(ADDR(.rodata) - VIRT_TO_PHYS_OFFSET) {
         *(.rodata .rodata.*)
     }
 
     . = ALIGN(4096);
     __data_start = .;
-    .data : AT(ADDR(.data) - KERNEL_VIRT_BASE + KERNEL_PHYS_BASE) {
+    .data : AT(ADDR(.data) - VIRT_TO_PHYS_OFFSET) {
         *(.data .data.*)
     }
     __data_end = .;
 
     . = ALIGN(4096);
     __bss_start = .;
-    .bss : AT(ADDR(.bss) - KERNEL_VIRT_BASE + KERNEL_PHYS_BASE) {
+    .bss : AT(ADDR(.bss) - VIRT_TO_PHYS_OFFSET) {
         *(.bss .bss.*)
         *(COMMON)
     }
@@ -52,7 +54,7 @@ SECTIONS
 }
 
 /* Memory region symbols */
-__kernel_phys_start = KERNEL_PHYS_BASE;
+/* Physical start is determined at runtime, not set here */
 __kernel_virt_start = KERNEL_VIRT_BASE;
 __kernel_size = _kernel_end - __kernel_virt_start;
 

@@ -30,8 +30,8 @@
 // #include <tests/kmalloc_tests.h>
 // #include <tests/malloc_types_tests.h>
 // #include <tests/slab_lookup_tests.h>
-// #include <tests/page_alloc_tests.h>
-// #include <tests/page_alloc_stress.h>
+#include <tests/page_alloc_tests.h>
+#include <tests/page_alloc_stress.h>
 
 // External symbols from linker script
 extern char __kernel_start;

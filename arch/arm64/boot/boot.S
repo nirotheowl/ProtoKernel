@@ -341,30 +341,35 @@ el1_entry:
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
     str x0, [x18]                         /* Store in L1[0] (index 0) */
     
-    /* Step 2b: L1 entry at index 1 pointing to kernel L2 */
+    /* Step 2b: L1 entry pointing to kernel L2
+     * Calculate which L1 index based on virtual address 0xFFFF000040000000
+     * Bits 38:30 of 0x40000000 = 1, so L1 index = 1
+     * This is fixed since virtual address is always the same */
     mov x0, x17                           /* L2 table physical address for kernel */
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
-    str x0, [x18, #8]                     /* Store in L1[1] (index 1) */
+    str x0, [x18, #8]                     /* Store in L1[1] - fixed for VA 0xFFFF000040000000 */
     
     /* Step 3: L2 entries for kernel mapping
      * Map from where we're actually loaded (x28 contains physical base).
      * Using 2MB blocks, aligned to 2MB boundary.
-     * Calculate the correct L2 index based on kernel's position within 1GB region.
-     * This maps the physical kernel location to the expected virtual addresses.
+     * IMPORTANT: We need to handle kernels loaded anywhere in memory.
+     * Solution: Map the physical kernel to virtual 0xFFFF000040200000.
+     * Since both addresses should have the same offset within a 2MB block,
+     * we need to start mapping from the 2MB-aligned physical base.
      */
     
-    /* Calculate L2 starting index: (x28 & 0x3FFFFFFF) >> 21 */
-    mov x12, x28                          /* Get physical base */
-    and x12, x12, #0x3FFFFFFF            /* Mask to get offset within 1GB */
-    lsr x12, x12, #L2_SHIFT               /* Divide by 2MB to get L2 index */
+    /* Fixed L2 index for virtual address 0xFFFF000040200000 
+     * This is index 1 within the L2 table (0x200000 / 0x200000 = 1) */
+    mov x12, #1                           
     
     /* Calculate starting position in L2 table */
     mov x2, x17                           /* L2 table base */
     lsl x11, x12, #3                      /* L2 index * 8 bytes per entry */
     add x2, x2, x11                       /* Point to correct L2 entry */
     
-    /* Map 64 consecutive 2MB blocks for 128MB total coverage */
-    mov x0, x28                           /* Start from detected physical base */
+    /* Map from the 2MB-aligned physical base 
+     * This ensures the offset within the 2MB block matches */
+    mov x0, x28                           /* Start from detected physical base (already 2MB aligned) */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */
     mov x3, #64                           /* 64 * 2MB = 128MB */
