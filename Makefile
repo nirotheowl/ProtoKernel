@@ -1,11 +1,17 @@
 # Architecture selection (default to ARM64)
 ARCH ?= arm64
 
+# Platform selection (default to QEMU virt)
+PLATFORM ?= qemu_virt
+
 # Validate architecture
 VALID_ARCHS := arm64
 ifeq ($(filter $(ARCH),$(VALID_ARCHS)),)
     $(error Invalid ARCH=$(ARCH). Valid options: $(VALID_ARCHS))
 endif
+
+# Include platform configuration if it exists
+-include configs/$(PLATFORM).conf
 
 # Toolchain
 ifeq ($(ARCH),arm64)
@@ -31,11 +37,18 @@ CFLAGS_COMMON += -I arch/$(ARCH)/include
 ifeq ($(ARCH),arm64)
     CFLAGS_ARCH = -march=armv8-a -mgeneral-regs-only
     CFLAGS_ARCH += -mcmodel=large -fno-pic -fno-pie
+    # Pass platform configuration to C code
+    ifdef CONFIG_PHYS_RAM_BASE
+        CFLAGS_ARCH += -DCONFIG_PHYS_RAM_BASE=$(CONFIG_PHYS_RAM_BASE)
+    endif
     LDSCRIPT = arch/$(ARCH)/linker.ld
+    # Pass configuration to linker (default to QEMU virt if not set)
+    CONFIG_PHYS_RAM_BASE ?= 0x40000000
+    LDFLAGS_ARCH = --defsym=CONFIG_PHYS_RAM_BASE=$(CONFIG_PHYS_RAM_BASE)
 endif
 
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_ARCH)
-LDFLAGS = -T $(LDSCRIPT) -nostdlib -static
+LDFLAGS = -T $(LDSCRIPT) -nostdlib -static $(LDFLAGS_ARCH)
 
 # Directories
 BUILD_DIR = build/$(ARCH)
@@ -64,7 +77,7 @@ ALL_OBJS = $(ARCH_ASM_OBJS) $(ARCH_C_OBJS) $(KERNEL_OBJS)
 # Default target
 .PHONY: all
 all: $(KERNEL_BIN) $(KERNEL_LST)
-	@echo "Build complete for $(ARCH) architecture"
+	@echo "Build complete for $(ARCH) architecture (platform: $(PLATFORM))"
 
 # Kernel binary
 $(KERNEL_BIN): $(KERNEL_ELF)
@@ -124,7 +137,7 @@ help:
 	@echo "Multi-Architecture Kernel Build System"
 	@echo "======================================"
 	@echo "Build targets:"
-	@echo "  make [ARCH=arm64]  - Build kernel for specified architecture (default: arm64)"
+	@echo "  make [ARCH=arm64] [PLATFORM=qemu_virt] - Build kernel for specified architecture/platform"
 	@echo "  make clean         - Remove build artifacts for current ARCH"
 	@echo "  make cleanall      - Remove all build artifacts"
 	@echo ""
@@ -135,3 +148,10 @@ help:
 	@echo ""
 	@echo "Available architectures: $(VALID_ARCHS)"
 	@echo "Current architecture: $(ARCH)"
+	@echo "Current platform: $(PLATFORM)"
+	@echo ""
+	@echo "Available platforms:"
+	@echo "  qemu_virt  - QEMU virt machine (RAM at 0x40000000)"
+	@echo "  rpi4       - Raspberry Pi 4 (RAM at 0x00000000)"
+	@echo "  server     - ARM server (RAM at 0x80000000)"
+	@echo "  riscv_qemu - RISC-V QEMU (RAM at 0x80000000)"

@@ -127,7 +127,8 @@ el1_entry:
 
     /* Get our actual physical load address dynamically */
     adr x28, _start         /* Get PC-relative address (physical) */
-    and x28, x28, #~0x1FFFFF  /* Align down to 2MB boundary */
+    mov x0, #0x1FFFFF       /* Load 2MB - 1 mask into register */
+    bic x28, x28, x0        /* Clear low 21 bits to align down to 2MB boundary */
     /* Now x28 = 2MB-aligned physical base address where kernel is loaded */
     
     /* Store physical base for later use */
@@ -342,20 +343,21 @@ el1_entry:
     str x0, [x18]                         /* Store in L1[0] (index 0) */
     
     /* Step 2b: L1 entry pointing to kernel L2
-     * Calculate which L1 index based on virtual address 0xFFFF000040000000
-     * Bits 38:30 of 0x40000000 = 1, so L1 index = 1
-     * This is fixed since virtual address is always the same */
+     * Virtual address is always fixed at 0xFFFF000040200000
+     * This maps to L1 index 1 (second GB of virtual space)
+     * We keep this simple - virtual address stays the same regardless of physical */
     mov x0, x17                           /* L2 table physical address for kernel */
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
     str x0, [x18, #8]                     /* Store in L1[1] - fixed for VA 0xFFFF000040000000 */
     
     /* Step 3: L2 entries for kernel mapping
      * Map from where we're actually loaded (x28 contains physical base).
-     * Using 2MB blocks, aligned to 2MB boundary.
-     * IMPORTANT: We need to handle kernels loaded anywhere in memory.
-     * Solution: Map the physical kernel to virtual 0xFFFF000040200000.
-     * Since both addresses should have the same offset within a 2MB block,
-     * we need to start mapping from the 2MB-aligned physical base.
+     * The physical base is dynamically detected and can be anywhere that meets:
+     * - Must be at offset 0x200000 within a 2MB boundary (e.g., XX200000)
+     * - Supports any XX from 00-FF (0x00200000 to 0xFF200000 and beyond)
+     * 
+     * Virtual mapping is always fixed at 0xFFFF000040200000 regardless of physical.
+     * This gives us position-independent code at a known virtual address.
      */
     
     /* Fixed L2 index for virtual address 0xFFFF000040200000 
@@ -368,7 +370,7 @@ el1_entry:
     add x2, x2, x11                       /* Point to correct L2 entry */
     
     /* Map from the 2MB-aligned physical base 
-     * This ensures the offset within the 2MB block matches */
+     * x28 contains the actual physical load address (dynamically detected) */
     mov x0, x28                           /* Start from detected physical base (already 2MB aligned) */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */

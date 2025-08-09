@@ -1,11 +1,15 @@
 ENTRY(_start)
 
-/* Higher-half kernel configuration */
-KERNEL_VIRT_BASE = 0xFFFF000040200000;  /* Virtual address in higher half */
-PHYS_OFFSET = 0x200000;                  /* 2MB offset where kernel starts relative to load base */
+/* Get physical base from build system 
+ * Since --defsym always defines the symbol (even as 0), we can't use DEFINED().
+ * Instead, we always use the CONFIG_PHYS_RAM_BASE value if provided. */
+KERNEL_PHYS_BASE = CONFIG_PHYS_RAM_BASE + 0x200000;
 
-/* Calculate the virtual-to-physical offset */
-VIRT_TO_PHYS_OFFSET = KERNEL_VIRT_BASE - PHYS_OFFSET;
+/* Higher-half kernel configuration */
+KERNEL_VIRT_BASE = 0xFFFF000040200000;  /* Virtual address in higher half (fixed) */
+
+/* Calculate the virtual-to-physical offset based on actual physical base */
+VIRT_TO_PHYS_OFFSET = KERNEL_VIRT_BASE - KERNEL_PHYS_BASE;
 
 SECTIONS
 {

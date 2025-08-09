@@ -2,9 +2,9 @@
 
 # Debug kernel at different load addresses using U-Boot and GDB
 # Usage: ./scripts/debug-uboot.sh [address] [gdb_script]
-# Default: 0x41000000
+# Default: 0x80200000 (server configuration)
 
-ADDR=${1:-0x41000000}
+ADDR=${1:-0x80200000}
 GDB_SCRIPT=${2:-}
 KERNEL_BIN="build/arm64/kernel.bin"
 KERNEL_ELF="build/arm64/kernel.elf"
@@ -121,7 +121,7 @@ echo "Starting QEMU with U-Boot in debug mode..."
 qemu-system-aarch64 \
     -M virt \
     -cpu cortex-a57 \
-    -m 1G \
+    -m 4G \
     -nographic \
     -bios "$UBOOT_BIN" \
     -drive file=fat:rw:"$TMPDIR",format=raw,if=none,id=drive0 \
