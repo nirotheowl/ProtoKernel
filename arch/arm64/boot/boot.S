@@ -125,22 +125,29 @@ el1_entry:
     dsb nsh
     isb
 
-    /* Get our actual physical load address dynamically */
-    adr x28, _start         /* Get PC-relative address (physical) */
-    mov x0, #0x1FFFFF       /* Load 2MB - 1 mask into register */
-    bic x28, x28, x0        /* Clear low 21 bits to align down to 2MB boundary */
-    /* Now x28 = 2MB-aligned physical base address where kernel is loaded */
+    /* Get our actual physical load address dynamically 
+     * The kernel is loaded at XX200000 (2MB offset within any aligned region)
+     * We need to calculate the physical address by finding the difference
+     * between where we are (physical) and where the linker thinks we are (virtual) */
+.Lget_phys_addr:
+    adr x28, .Lget_phys_addr  /* Get current physical address of this label */
+    ldr x0, =.Lget_phys_addr  /* Get virtual address of this label */
+    sub x28, x28, x0          /* Calculate offset: phys - virt */
+    ldr x0, =_start           /* Get virtual address of _start */
+    add x28, x28, x0          /* Add offset to get physical address of _start */
+    /* x28 now contains actual load address (e.g., 0x40200000 or 0x80200000) */
     
     /* Store physical base for later use */
     adr x0, phys_base_storage
     str x28, [x0]
     
-    /* Physical base is now in x28 */
+    /* Physical base is now in x28 (e.g., 0x40200000 or 0x80200000) */
     
-    /* Calculate the region we will identity map (needed for DTB check) */
+    /* Calculate the region we will identity map (needed for DTB check)
+     * We align down to 64MB boundary to ensure we map a large enough region */
     mov x15, x28                          /* Get kernel physical base */
     and x15, x15, #~0x3FFFFFF            /* Align down to 64MB boundary */
-    /* x15 = start of region to map */
+    /* x15 = start of region to map (e.g., 0x40000000 for 0x40200000) */
     
     /*
      * Copy DTB to a safe location if needed
@@ -247,7 +254,7 @@ el1_entry:
     
     /* Clear page table memory first */
     mov x0, x26                           /* Start address */
-    mov x1, #(10 * PAGE_SIZE)             /* Size to clear (10 pages total) */
+    mov x1, #(12 * PAGE_SIZE)             /* Size to clear (12 pages) */
     bl func_zero_memory                   /* Call helper function */
 
     /* Set up page table pointers */
@@ -261,12 +268,9 @@ el1_entry:
     mov x22, x25                          /* x22 = L1 table for TTBR0 */
     add x25, x25, #PAGE_SIZE
     
-    /* TTBR0 L2 table for first 512MB */
+    /* TTBR0 L2 table - for now just allocate one table
+     * TODO: Properly handle multiple GB regions */
     mov x21, x25                          /* x21 = L2 table for TTBR0 */
-    add x25, x25, #PAGE_SIZE
-    
-    /* TTBR0 L2 table for second 512MB (where kernel is) */
-    mov x20, x25                          /* x20 = L2 table for second 512MB */
     add x25, x25, #PAGE_SIZE
 
     /* Create identity mapping using 2MB blocks.
@@ -290,7 +294,11 @@ el1_entry:
     str x0, [x23, x1]                     /* Store in L0[index] */
     
     /* Step 2: L1 entry pointing to L2 table */
-    mov x0, x21                           /* L2 table physical address */
+    /* TODO: This currently only works for single GB mappings.
+     * For server platform at 0x80200000 (GB 2), we need to allocate
+     * separate L2 tables for each GB */
+    mov x0, x21                           /* Use L2 table */
+    mov x2, x0                            /* Save L2 table base for later use */
     orr x0, x0, #TABLE_DESC               /* Table descriptor */
     lsl x1, x13, #3                       /* L1 index * 8 */
     str x0, [x22, x1]                     /* Store in L1[index] */
@@ -300,7 +308,7 @@ el1_entry:
     mov x0, x15                           /* Physical address to map */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */
-    mov x2, x21                           /* L2 table base */
+    /* x2 already contains L2 table base */
     mov x3, #64                           /* Number of 2MB blocks (128MB total) */
     
 1:  orr x4, x0, x1                        /* Combine address and attributes */
@@ -315,7 +323,8 @@ el1_entry:
      * Map kernel from its physical load address to higher virtual addresses
      */
     
-    /* Allocate TTBR1 page tables (continuing from x25) */
+    /* Allocate TTBR1 page tables (continuing from x25)
+     * These are for the kernel's virtual address space */
     mov x19, x25                          /* x19 = L0 table for TTBR1 */
     add x25, x25, #PAGE_SIZE
     
@@ -351,10 +360,8 @@ el1_entry:
     str x0, [x18, #8]                     /* Store in L1[1] - fixed for VA 0xFFFF000040000000 */
     
     /* Step 3: L2 entries for kernel mapping
-     * Map from where we're actually loaded (x28 contains physical base).
-     * The physical base is dynamically detected and can be anywhere that meets:
-     * - Must be at offset 0x200000 within a 2MB boundary (e.g., XX200000)
-     * - Supports any XX from 00-FF (0x00200000 to 0xFF200000 and beyond)
+     * Map from where we're actually loaded (x28 contains actual load address).
+     * The kernel is loaded at XX200000 (2MB offset within any aligned region).
      * 
      * Virtual mapping is always fixed at 0xFFFF000040200000 regardless of physical.
      * This gives us position-independent code at a known virtual address.
@@ -369,9 +376,12 @@ el1_entry:
     lsl x11, x12, #3                      /* L2 index * 8 bytes per entry */
     add x2, x2, x11                       /* Point to correct L2 entry */
     
-    /* Map from the 2MB-aligned physical base 
-     * x28 contains the actual physical load address (dynamically detected) */
-    mov x0, x28                           /* Start from detected physical base (already 2MB aligned) */
+    /* Map from the actual physical load address 
+     * x28 contains the actual physical load address (e.g., 0x40200000, 0x80200000)
+     * We need to align it down to 2MB for the block descriptor */
+    mov x0, x28                           /* Get actual load address */
+    mov x1, #0x1FFFFF                     /* Load 2MB - 1 mask */
+    bic x0, x0, x1                        /* Align down to 2MB boundary for block mapping */
     mov x1, #ATTR_AF | ATTR_SH_INNER | ATTR_MAIR_IDX_NORMAL | ATTR_AP_RW_EL1
     orr x1, x1, #BLOCK_DESC               /* Block descriptor */
     mov x3, #64                           /* 64 * 2MB = 128MB */
