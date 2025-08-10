@@ -37,7 +37,7 @@ run_display_arm64() {
 
 run_debug_arm64() {
     echo "Running ARM64 kernel in QEMU debug mode..."
-    echo "Start GDB in another terminal with: ./scripts/debug-gdb.sh"
+    echo "Start GDB in another terminal with: ./scripts/debug-gdb-arm64.sh"
     ./scripts/run-debug-arm64.sh
 }
 
@@ -46,15 +46,10 @@ run_uboot_arm64() {
     ./scripts/run-uboot.sh
 }
 
-# RISC-V-specific functions (placeholders for now)
+# RISC-V-specific functions
 run_emu_riscv() {
     echo "Running RISC-V kernel in QEMU (direct boot)..."
-    if [ -f "./scripts/run-riscv.sh" ]; then
-        ./scripts/run-riscv.sh
-    else
-        echo "Error: RISC-V run script not yet implemented"
-        return 1
-    fi
+    ./scripts/run-riscv.sh
 }
 
 run_display_riscv() {
@@ -69,12 +64,8 @@ run_display_riscv() {
 
 run_debug_riscv() {
     echo "Running RISC-V kernel in QEMU debug mode..."
-    if [ -f "./scripts/run-debug-riscv.sh" ]; then
-        ./scripts/run-debug-riscv.sh
-    else
-        echo "Error: RISC-V debug script not yet implemented"
-        return 1
-    fi
+    echo "Start GDB in another terminal with: ./scripts/debug-gdb-riscv.sh"
+    ./scripts/run-debug-riscv.sh
 }
 
 # Legacy compatibility aliases (will print deprecation warning)
@@ -135,9 +126,9 @@ kernel_help() {
     echo "  run_uboot_arm64  - Run ARM64 kernel with U-Boot"
     echo ""
     echo "RISC-V commands:"
-    echo "  run_emu_riscv    - Run RISC-V kernel in QEMU (not yet implemented)"
+    echo "  run_emu_riscv    - Run RISC-V kernel in QEMU"
     echo "  run_display_riscv - Run RISC-V kernel with display (not yet implemented)"
-    echo "  run_debug_riscv  - Run RISC-V kernel in debug mode (not yet implemented)"
+    echo "  run_debug_riscv  - Run RISC-V kernel in debug mode"
     echo ""
     echo "Clean commands:"
     echo "  clean [arch]     - Clean build artifacts (all or specific arch)"

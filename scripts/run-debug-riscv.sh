@@ -2,13 +2,13 @@
 
 # Run kernel with QEMU in debug mode
 
-KERNEL_BIN="build/arm64/kernel.bin"
-KERNEL_ELF="build/arm64/kernel.elf"
+KERNEL_BIN="build/riscv/kernel.bin"
+KERNEL_ELF="build/riscv/kernel.elf"
 DEBUG_PORT=1234
 
 if [ ! -f "$KERNEL_BIN" ]; then
     echo "Error: Kernel binary not found at $KERNEL_BIN"
-    echo "Please run 'make' first to build the kernel"
+    echo "Please run 'make ARCH=riscv' first to build the kernel"
     exit 1
 fi
 
@@ -17,13 +17,13 @@ echo "GDB will listen on port $DEBUG_PORT"
 echo "Press Ctrl-A X to exit QEMU"
 echo ""
 echo "To connect with GDB, run in another terminal:"
-echo "  ./scripts/debug-gdb-arm64.sh"
+echo "  ./scripts/debug-gdb-riscv.sh"
 echo ""
 
 # Use binary file for proper DTB loading, GDB will load symbols from ELF
-qemu-system-aarch64 \
+qemu-system-riscv64 \
     -M virt \
-    -cpu cortex-a53 \
+    -bios none \
     -m 1G \
     -nographic \
     -kernel "$KERNEL_BIN" \

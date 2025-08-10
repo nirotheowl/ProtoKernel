@@ -2,7 +2,7 @@
 
 # Launch GDB in TUI mode to debug the kernel
 
-KERNEL_ELF="build/kernel.elf"
+KERNEL_ELF="build/arm64/kernel.elf"
 GDB_PORT=1234
 
 if [ ! -f "$KERNEL_ELF" ]; then

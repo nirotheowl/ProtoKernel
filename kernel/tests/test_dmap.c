@@ -643,7 +643,8 @@ void test_dmap_barriers(void) {
     
     /* Write with barrier */
     *ptr = 0x1111111111111111;
-    __asm__ volatile("dmb sy" ::: "memory");  /* Full system barrier */
+    // FIXME: AArch64 Specific
+    // __asm__ volatile("dmb sy" ::: "memory");  /* Full system barrier */
     
     uint64_t val1 = *ptr;
     uart_puts("After DMB SY: ");
@@ -652,7 +653,8 @@ void test_dmap_barriers(void) {
     
     /* Write with store barrier */
     *ptr = 0x2222222222222222;
-    __asm__ volatile("dmb st" ::: "memory");  /* Store barrier */
+    // FIXME: AArch64 Specific
+    // __asm__ volatile("dmb st" ::: "memory");  /* Store barrier */
     
     uint64_t val2 = *ptr;
     uart_puts("After DMB ST: ");
@@ -661,8 +663,9 @@ void test_dmap_barriers(void) {
     
     /* Write with instruction sync */
     *ptr = 0x3333333333333333;
-    __asm__ volatile("dsb sy" ::: "memory");  /* Data sync barrier */
-    __asm__ volatile("isb" ::: "memory");     /* Instruction sync */
+    // FIXME: AArch64 Specific
+    // __asm__ volatile("dsb sy" ::: "memory");  /* Data sync barrier */
+    // __asm__ volatile("isb" ::: "memory");     /* Instruction sync */
     
     uint64_t val3 = *ptr;
     uart_puts("After DSB+ISB: ");

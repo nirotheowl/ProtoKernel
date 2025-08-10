@@ -5,7 +5,7 @@ ARCH ?= arm64
 PLATFORM ?= qemu_virt
 
 # Validate architecture
-VALID_ARCHS := arm64
+VALID_ARCHS := arm64 riscv
 ifeq ($(filter $(ARCH),$(VALID_ARCHS)),)
     $(error Invalid ARCH=$(ARCH). Valid options: $(VALID_ARCHS))
 endif
@@ -16,6 +16,20 @@ endif
 # Toolchain
 ifeq ($(ARCH),arm64)
     CROSS_COMPILE ?= aarch64-none-elf-
+else ifeq ($(ARCH),riscv)
+    # Try to auto-detect RISC-V toolchain (different distros use different names)
+    ifeq ($(CROSS_COMPILE),)
+        ifneq ($(shell which riscv64-elf-gcc 2>/dev/null),)
+            CROSS_COMPILE = riscv64-elf-
+        else ifneq ($(shell which riscv64-unknown-elf-gcc 2>/dev/null),)
+            CROSS_COMPILE = riscv64-unknown-elf-
+        else ifneq ($(shell which riscv64-linux-gnu-gcc 2>/dev/null),)
+            CROSS_COMPILE = riscv64-linux-gnu-
+        else
+            $(warning RISC-V toolchain not found. Please install or set CROSS_COMPILE)
+            CROSS_COMPILE = riscv64-elf-
+        endif
+    endif
 endif
 
 CC = $(CROSS_COMPILE)gcc
@@ -45,6 +59,13 @@ ifeq ($(ARCH),arm64)
     # Pass configuration to linker (default to QEMU virt if not set)
     CONFIG_PHYS_RAM_BASE ?= 0x40000000
     LDFLAGS_ARCH = --defsym=CONFIG_PHYS_RAM_BASE=$(CONFIG_PHYS_RAM_BASE)
+else ifeq ($(ARCH),riscv)
+    CFLAGS_ARCH = -march=rv64imac_zicsr_zifencei -mabi=lp64
+    CFLAGS_ARCH += -mcmodel=medany -fno-pic -fno-pie
+    LDSCRIPT = arch/$(ARCH)/linker.ld
+    # RISC-V QEMU virt loads at 0x80200000
+    CONFIG_PHYS_RAM_BASE ?= 0x80000000
+    LDFLAGS_ARCH = 
 endif
 
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_ARCH)

@@ -4,11 +4,11 @@
 
 echo "Building ARM64 kernel..."
 make clean
-make
+make ARCH=arm64
 
 if [ $? -eq 0 ]; then
     echo "Build successful!"
-    ls -lh build/kernel.bin
+    ls -lh build/arm64/kernel.bin
 else
     echo "Build failed!"
     exit 1
