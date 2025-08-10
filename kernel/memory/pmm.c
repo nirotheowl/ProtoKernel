@@ -128,10 +128,15 @@ void pmm_init(uint64_t kernel_end, struct memory_info *mem_info) {
     uart_puthex(pmm_bootstrap_size);
     uart_puts(" bytes\n");
     
-    // Safety check: ensure boot allocator doesn't extend too far
-    if (pmm_bootstrap_end > mem_base + (16 * 1024 * 1024)) {
-        uart_puts("ERROR: Boot allocator would extend beyond 16MB from RAM base!\n");
-        uart_puts("  Boot alloc end: ");
+    // Safety check: ensure boot allocator doesn't extend too far from kernel
+    // Use kernel physical base instead of assuming kernel is near RAM base
+    // The kernel can be loaded anywhere in RAM (e.g., 0x40200000 or 0x80200000)
+    extern uint64_t kernel_phys_base;
+    if (pmm_bootstrap_end > kernel_phys_base + (32 * 1024 * 1024)) {
+        uart_puts("ERROR: Boot allocator would extend beyond 32MB from kernel!\n");
+        uart_puts("  Kernel phys base: ");
+        uart_puthex(kernel_phys_base);
+        uart_puts("\n  Boot alloc end: ");
         uart_puthex(pmm_bootstrap_end);
         uart_puts("\n");
         return;
