@@ -621,10 +621,34 @@ higher_half:
     
     /*
      * Step 10: Set up trap vector
-     * TODO: Load address of trap_vector
-     * TODO: Write to stvec register
-     * TODO: Set MODE bits for vectored vs direct mode
+     * Configure the supervisor trap vector to handle exceptions and interrupts.
+     * We'll use direct mode (MODE=0) where all traps jump to the same handler.
      */
+    
+    /* Load the virtual address of trap_vector */
+    la t0, trap_vector          /* Load address of trap handler */
+    
+    /* Set direct mode (MODE[1:0] = 00) - all exceptions go to BASE address
+     * In direct mode, all traps cause pc to be set to BASE */
+    andi t0, t0, ~0x3           /* Clear lower 2 bits to ensure MODE=00 */
+    
+    /* Write to stvec register */
+    csrw stvec, t0              /* Set supervisor trap vector */
+    
+    /* Verify it was set correctly (optional, for safety) */
+    csrr t1, stvec
+    bne t0, t1, .Ltrap_setup_failed
+    
+    /* Trap vector successfully configured */
+    j .Ltrap_setup_done
+    
+.Ltrap_setup_failed:
+    /* If trap setup failed, hang here for debugging
+     * This shouldn't happen, but better safe than sorry */
+    wfi
+    j .Ltrap_setup_failed
+    
+.Ltrap_setup_done:
 
     /*
      * Step 11: Initialize CPU features
