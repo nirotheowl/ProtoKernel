@@ -104,39 +104,39 @@
  * - Level 0 PTE: 4KB page
  */
 
-    /* PTE attribute bits for RISC-V Sv39 */
-    .equ PTE_V,     0x001    /* Valid */
-    .equ PTE_R,     0x002    /* Read permission */
-    .equ PTE_W,     0x004    /* Write permission */
-    .equ PTE_X,     0x008    /* Execute permission */
-    .equ PTE_U,     0x010    /* User accessible */
-    .equ PTE_G,     0x020    /* Global mapping */
-    .equ PTE_A,     0x040    /* Accessed */
-    .equ PTE_D,     0x080    /* Dirty */
-    
-    /* Common PTE combinations */
-    .equ PTE_KERNEL_RX,  PTE_V | PTE_R | PTE_X | PTE_A | PTE_D | PTE_G
-    .equ PTE_KERNEL_RW,  PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_G
-    .equ PTE_KERNEL_RO,  PTE_V | PTE_R | PTE_A | PTE_G
-    .equ PTE_TABLE,      PTE_V  /* Points to next level */
-    
-    /* Page sizes */
-    .equ PAGE_SHIFT,     12
-    .equ PAGE_SIZE,      (1 << PAGE_SHIFT)      /* 4KB */
-    .equ MEGAPAGE_SHIFT, 21
-    .equ MEGAPAGE_SIZE,  (1 << MEGAPAGE_SHIFT)  /* 2MB */
-    .equ GIGAPAGE_SHIFT, 30
-    .equ GIGAPAGE_SIZE,  (1 << GIGAPAGE_SHIFT)  /* 1GB */
-    
-    /* SATP mode values */
-    .equ SATP_MODE_BARE, 0
-    .equ SATP_MODE_SV39, 8
-    .equ SATP_MODE_SV48, 9
-    
-    /* Privilege modes */
-    .equ PRV_U, 0    /* User mode */
-    .equ PRV_S, 1    /* Supervisor mode */
-    .equ PRV_M, 3    /* Machine mode */
+/* PTE attribute bits for RISC-V Sv39 */
+.equ PTE_V,     0x001    /* Valid */
+.equ PTE_R,     0x002    /* Read permission */
+.equ PTE_W,     0x004    /* Write permission */
+.equ PTE_X,     0x008    /* Execute permission */
+.equ PTE_U,     0x010    /* User accessible */
+.equ PTE_G,     0x020    /* Global mapping */
+.equ PTE_A,     0x040    /* Accessed */
+.equ PTE_D,     0x080    /* Dirty */
+
+/* Common PTE combinations */
+.equ PTE_KERNEL_RX,  PTE_V | PTE_R | PTE_X | PTE_A | PTE_D | PTE_G
+.equ PTE_KERNEL_RW,  PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_G
+.equ PTE_KERNEL_RO,  PTE_V | PTE_R | PTE_A | PTE_G
+.equ PTE_TABLE,      PTE_V  /* Points to next level */
+
+/* Page sizes */
+.equ PAGE_SHIFT,     12
+.equ PAGE_SIZE,      (1 << PAGE_SHIFT)      /* 4KB */
+.equ MEGAPAGE_SHIFT, 21
+.equ MEGAPAGE_SIZE,  (1 << MEGAPAGE_SHIFT)  /* 2MB */
+.equ GIGAPAGE_SHIFT, 30
+.equ GIGAPAGE_SIZE,  (1 << GIGAPAGE_SHIFT)  /* 1GB */
+
+/* SATP mode values */
+.equ SATP_MODE_BARE, 0
+.equ SATP_MODE_SV39, 8
+.equ SATP_MODE_SV48, 9
+
+/* Privilege modes */
+.equ PRV_U, 0    /* User mode */
+.equ PRV_S, 1    /* Supervisor mode */
+.equ PRV_M, 3    /* Machine mode */
 
 /*
  * RISC-V Linux Boot Image Header
@@ -166,8 +166,8 @@ _boot_start:
      * Bootloader passes: a0=hartid, a1=dtb pointer
      * Save in callee-saved registers that won't be clobbered
      */
-    mv      s0, a0                  /* s0 = hartid */
-    mv      s1, a1                  /* s1 = device tree pointer */
+    mv s0, a0                   /* s0 = hartid */
+    mv s1, a1                   /* s1 = device tree pointer */
     
     /*
      * Note: DTB relocation will be handled after we set up identity mapping
@@ -191,9 +191,9 @@ _boot_start:
      * TEMPORARY: Hardcoded to 0x80200000 for QEMU testing
      * This MUST be fixed for real hardware support
      */
-    li      t0, 0x80200000          /* TEMPORARY - hardcoded for QEMU */
-    la      t1, phys_base_storage
-    sd      t0, 0(t1)
+    li t0, 0x80200000          /* TEMPORARY - hardcoded for QEMU */
+    la t1, phys_base_storage
+    sd t0, 0(t1)
 
 .Lcommon_smode_path:
     /* Common code for both S-mode and M-mode entry paths */
@@ -201,17 +201,27 @@ _boot_start:
     
     /*
      * Step 3: Set up early stack
-     * TODO: Calculate physical address for bootstrap stack
-     * TODO: Set stack pointer to a safe location
-     * TODO: Ensure stack is 16-byte aligned for RISC-V ABI
+     * Load the physical address of our bootstrap stack
+     * Stack grows down, so we use the top address
      */
+    la sp, boot_stack_top       /* Load stack top address */
+    /* Stack is already 16-byte aligned from .align directive */
 
     /*
      * Step 4: Clear BSS section
-     * TODO: Load __bss_start and __bss_end addresses
-     * TODO: Zero out BSS section using sd instructions
-     * TODO: Handle both physical addresses during bootstrap
+     * Zero out all uninitialized global variables
+     * We're still using physical addresses (MMU not enabled yet)
      */
+    la t0, __bss_start          /* Load BSS start address */
+    la t1, __bss_end            /* Load BSS end address */
+    
+.Lclear_bss_loop:
+    beq t0, t1, .Lclear_bss_done   /* If start == end, we're done */
+    sd zero, 0(t0)              /* Store zero at current address */
+    addi t0, t0, 8              /* Move to next 8-byte word */
+    j .Lclear_bss_loop          /* Continue loop */
+    
+.Lclear_bss_done:
 
     /*
      * Step 5: Set up identity mapping for bootstrap
@@ -348,12 +358,12 @@ higher_half:
  * TODO: May not be needed if using 2MB megapages
  */
 
-/*
- * boot_stack:
- * TODO: Reserve space for initial stack
- * TODO: Typically 16KB or 32KB
- * TODO: Align to 16 bytes for ABI compliance
- */
+/* Bootstrap stack for early initialization */
+.align 4  /* Align to 16 bytes for RISC-V ABI */
+boot_stack_bottom:
+    .space 0x4000  /* 16KB stack */
+.global boot_stack_top
+boot_stack_top:
 
 /* Storage for dynamically detected physical base address */
 .align 3
@@ -386,40 +396,40 @@ _start_mmode:
 .align 6
 _boot_start_mmode:
     /* Save boot parameters (same as S-mode entry) */
-    mv      s0, a0                  /* s0 = hartid */
-    mv      s1, a1                  /* s1 = device tree pointer */
+    mv s0, a0                   /* s0 = hartid */
+    mv s1, a1                   /* s1 = device tree pointer */
     
     /* We're in M-mode - set up S-mode and transition */
     
     /* Configure mstatus for S-mode operation */
-    li      t0, 0x00001800          /* MPP[12:11] = 01 (S-mode) */
-    csrw    mstatus, t0
+    li t0, 0x00001800          /* MPP[12:11] = 01 (S-mode) */
+    csrw mstatus, t0
     
     /* Delegate all exceptions and interrupts to S-mode */
-    li      t0, 0xFFFF              /* Delegate all exceptions */
-    csrw    medeleg, t0
-    li      t0, 0xFFFF              /* Delegate all interrupts */
-    csrw    mideleg, t0
+    li t0, 0xFFFF              /* Delegate all exceptions */
+    csrw medeleg, t0
+    li t0, 0xFFFF              /* Delegate all interrupts */
+    csrw mideleg, t0
     
     /* Configure PMP to allow S-mode access to all memory */
     /* Set PMP to allow all accesses (R=1, W=1, X=1) for entire address space */
-    li      t0, 0x1F                /* R=1, W=1, X=1, A=11 (NAPOT), L=0 */
-    csrw    pmpcfg0, t0
-    li      t0, -1                  /* Cover entire address space */
-    srli    t0, t0, 2               /* Adjust for NAPOT encoding */
-    csrw    pmpaddr0, t0
+    li t0, 0x1F                /* R=1, W=1, X=1, A=11 (NAPOT), L=0) */
+    csrw pmpcfg0, t0
+    li t0, -1                  /* Cover entire address space */
+    srli t0, t0, 2             /* Adjust for NAPOT encoding */
+    csrw pmpaddr0, t0
     
     /* Calculate and store physical base (same as S-mode path) */
     /* TODO: Calculate dynamically - TEMPORARY hardcoded for QEMU */
-    li      t0, 0x80200000          /* TEMPORARY - hardcoded for QEMU */
-    la      t1, phys_base_storage
-    sd      t0, 0(t1)
+    li t0, 0x80200000          /* TEMPORARY - hardcoded for QEMU */
+    la t1, phys_base_storage
+    sd t0, 0(t1)
     
     /* Set up mepc to continue in S-mode at common code */
     /* Jump to the point after privilege mode handling in main flow */
     /* This is right after the physical base storage in the S-mode path */
-    la      t0, .Lcommon_smode_path
-    csrw    mepc, t0
+    la t0, .Lcommon_smode_path
+    csrw mepc, t0
     
     /* Return to S-mode */
     mret
