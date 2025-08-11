@@ -526,10 +526,14 @@ _boot_start:
 
 higher_half:
     /*
-     * Step 9: Clean up identity mapping
+     * Step 9: Continue with higher-half execution
+     * NOTE: We keep the identity mapping! It's needed for:
+     * - PMM bitmap storage
+     * - DTB access
+     * - Physical memory operations
+     * - DMA and hardware interactions
+     * This mirrors the ARM64 approach where TTBR0 maintains identity mapping.
      * TODO: Switch to virtual stack pointer
-     * TODO: Remove identity mapping entries from page tables
-     * TODO: Flush TLB with sfence.vma
      */
 
     /*
