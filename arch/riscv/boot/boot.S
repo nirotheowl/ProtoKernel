@@ -436,12 +436,77 @@ _boot_start:
 
     /*
      * Step 6: Set up higher-half kernel mapping
-     * TODO: Calculate virtual-to-physical offset
-     * TODO: Create mapping from KERNEL_VIRT_BASE to KERNEL_PHYS_BASE
-     * TODO: Map kernel text as R+X
-     * TODO: Map kernel data as R+W
-     * TODO: Map kernel rodata as R only
+     * Map the kernel from its virtual address (0xFFFFFFFF80200000) to its
+     * physical address. We'll use 2MB megapages for efficiency.
+     * 
+     * Virtual address breakdown for 0xFFFFFFFF80200000 in Sv39:
+     * - Bits [38:30] = 0x1FF (L2 index 511, last entry)
+     * - Bits [29:21] = 0x001 (L1 index 1)
+     * - Bits [20:12] = 0x000 (L0 index 0)
+     * - Bits [11:0]  = 0x000 (offset 0)
      */
+    
+    /* Install L1 page table for kernel mapping in L2 root table
+     * The kernel virtual address starts at 0xFFFFFFFF80200000
+     * L2 index = (0xFFFFFFFF80200000 >> 30) & 0x1FF = 511 (last entry) */
+    li t0, 511                  /* L2 index for kernel space */
+    slli t0, t0, 3              /* Multiply by 8 for byte offset */
+    add t0, s5, t0              /* t0 = address of L2 PTE */
+    
+    /* Create L2 PTE pointing to kernel L1 table */
+    mv t1, s7                   /* L1 table physical address (for kernel) */
+    srli t1, t1, PAGE_SHIFT     /* Convert to PPN */
+    slli t1, t1, 10             /* Shift PPN to correct position in PTE */
+    ori t1, t1, PTE_V           /* Set valid bit (non-leaf) */
+    sd t1, 0(t0)                /* Store L2 PTE */
+    
+    /* Calculate how much to map
+     * We'll map 128MB of kernel space using 2MB megapages, matching the
+     * identity mapping size. This ensures everything accessible via identity
+     * mapping remains accessible through higher-half addresses */
+    li t6, 128 * 1024 * 1024    /* t6 = size to map (128MB) */
+    
+    /* Fill L1 table with 2MB megapage mappings for kernel
+     * Virtual base: 0xFFFFFFFF80200000
+     * Physical base: s2 (calculated earlier, e.g., 0x80200000) */
+    
+    mv t0, s7                   /* L1 table base for kernel mapping */
+    mv t1, s2                   /* Physical base address of kernel */
+    mv t2, t6                   /* Size to map */
+    
+    /* Calculate the starting L1 index
+     * For VA 0xFFFFFFFF80200000, L1 index = (0x80200000 >> 21) & 0x1FF = 0x401 & 0x1FF = 1
+     * Actually, we need to be more careful here. Let's recalculate:
+     * The 39-bit portion of VA is: 0x1FF80200000
+     * L1 index = (0x80200000 >> 21) & 0x1FF = 1 */
+    li t3, 1                    /* Starting L1 index */
+    slli t3, t3, 3              /* Convert to byte offset */
+    add t0, t0, t3              /* Start at correct L1 entry */
+    
+.Lkernel_map_loop:
+    beqz t2, .Lkernel_map_done
+    
+    /* Create PTE for 2MB megapage */
+    mv t3, t1                   /* Physical address */
+    srli t3, t3, PAGE_SHIFT     /* Convert to PPN */
+    slli t3, t3, 10             /* Shift PPN to correct position */
+    
+    /* Set permissions: V, R, W, X, A, D, G for kernel code/data
+     * We're using RWX for simplicity now. In production, we'd separate
+     * text (RX), rodata (R), and data (RW) sections */
+    li t4, PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D | PTE_G
+    or t3, t3, t4
+    
+    sd t3, 0(t0)                /* Store PTE */
+    
+    /* Move to next 2MB region */
+    addi t0, t0, 8              /* Next PTE slot */
+    li t5, MEGAPAGE_SIZE
+    add t1, t1, t5              /* Next physical address */
+    sub t2, t2, t5              /* Decrease remaining size */
+    j .Lkernel_map_loop
+    
+.Lkernel_map_done:
 
     /*
      * Step 7: Configure and enable MMU
