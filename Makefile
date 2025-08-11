@@ -1,8 +1,12 @@
 # Architecture selection (default to ARM64)
 ARCH ?= arm64
 
-# Platform selection (default to QEMU virt)
-PLATFORM ?= qemu_virt
+# Platform selection (default based on architecture)
+ifeq ($(ARCH),riscv)
+    PLATFORM ?= riscv_qemu
+else
+    PLATFORM ?= qemu_virt
+endif
 
 # Validate architecture
 VALID_ARCHS := arm64 riscv
@@ -65,7 +69,7 @@ else ifeq ($(ARCH),riscv)
     LDSCRIPT = arch/$(ARCH)/linker.ld
     # RISC-V QEMU virt loads at 0x80200000
     CONFIG_PHYS_RAM_BASE ?= 0x80000000
-    LDFLAGS_ARCH = 
+    LDFLAGS_ARCH = --defsym=CONFIG_PHYS_RAM_BASE=$(CONFIG_PHYS_RAM_BASE)
 endif
 
 CFLAGS = $(CFLAGS_COMMON) $(CFLAGS_ARCH)

@@ -11,7 +11,9 @@
 
 // External symbols from linker script
 extern char _kernel_end;
-extern char _kernel_phys_base;
+
+// External from boot.S - physical base address storage
+extern uint64_t phys_base_storage;
 
 // Global kernel physical base (used by VIRT_TO_PHYS/PHYS_TO_VIRT macros)
 uint64_t kernel_phys_base;
@@ -50,8 +52,9 @@ void init_riscv(unsigned long hart_id, void *dtb) {
      * - Hart ID indicates which CPU core we're on
      */
     
-    // Initialize kernel physical base from linker
-    kernel_phys_base = (uint64_t)&_kernel_phys_base;
+    // Initialize kernel physical base from boot.S
+    // phys_base_storage was set in physical memory during boot
+    kernel_phys_base = phys_base_storage;
     
     // Initialize cache subsystem
     arch_cache_init();

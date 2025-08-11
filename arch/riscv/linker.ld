@@ -1,70 +1,66 @@
-/*
- * arch/riscv/linker.ld
- * 
- * RISC-V kernel linker script
- * Memory layout for QEMU virt machine
- */
-
-OUTPUT_ARCH(riscv)
 ENTRY(_start)
 
-/* QEMU RISC-V virt loads kernel at 0x80200000 by default */
-KERNEL_PHYS_BASE = 0x80200000;
+/* Get physical base from build system 
+ * Since --defsym always defines the symbol (even as 0), we can't use DEFINED().
+ * Instead, we always use the CONFIG_PHYS_RAM_BASE value if provided. */
+KERNEL_PHYS_BASE = CONFIG_PHYS_RAM_BASE + 0x200000;
+
+/* Higher-half kernel configuration for RISC-V Sv39 */
+KERNEL_VIRT_BASE = 0xFFFFFFFF80200000;  /* Virtual address in higher half */
+
+/* Calculate the virtual-to-physical offset based on actual physical base */
+VIRT_TO_PHYS_OFFSET = KERNEL_VIRT_BASE - KERNEL_PHYS_BASE;
 
 SECTIONS
 {
-    . = KERNEL_PHYS_BASE;
-    
-    _kernel_start = .;
-    __kernel_start = .;
-    
-    /* Code sections */
+    . = KERNEL_VIRT_BASE;
+
     __text_start = .;
-    .text : {
-        *(.text.boot)
-        *(.text*)
+    .text : AT(ADDR(.text) - VIRT_TO_PHYS_OFFSET) {
+        KEEP(*(.text.boot))
+        *(.text .text.*)
     }
     __text_end = .;
-    
+
     . = ALIGN(4096);
-    
-    /* Read-only data */
-    .rodata : {
-        *(.rodata*)
+    .rodata : AT(ADDR(.rodata) - VIRT_TO_PHYS_OFFSET) {
+        *(.rodata .rodata.*)
     }
-    
+
     . = ALIGN(4096);
-    
-    /* Data sections */
     __data_start = .;
-    .data : {
-        *(.data*)
+    .data : AT(ADDR(.data) - VIRT_TO_PHYS_OFFSET) {
+        *(.data .data.*)
     }
     __data_end = .;
-    
+
     . = ALIGN(4096);
-    
-    /* BSS section */
-    _bss_start = .;
     __bss_start = .;
-    .bss : {
-        *(.bss*)
+    .bss : AT(ADDR(.bss) - VIRT_TO_PHYS_OFFSET) {
+        *(.bss .bss.*)
         *(COMMON)
     }
-    _bss_end = .;
     __bss_end = .;
-    
+
     . = ALIGN(4096);
-    
-    /* Stack - 64KB */
-    _stack_bottom = .;
-    . += 0x10000;
-    _stack_top = .;
-    
+    . = . + 0x1000;     /* 4KB guard page */
     _kernel_end = .;
+    
+    /* Linux header image_size calculation */
+    _end = .;
+
+    /DISCARD/ : {
+        *(.comment)
+        *(.gnu*)
+        *(.note*)
+        *(.eh_frame*)
+    }
 }
 
-/* Export symbols for use in code */
-PROVIDE(_end = .);
-PROVIDE(_kernel_phys_base = KERNEL_PHYS_BASE);
-PROVIDE(kernel_phys_base = KERNEL_PHYS_BASE);
+/* Memory region symbols */
+/* Physical start is determined at runtime, not set here */
+__kernel_virt_start = KERNEL_VIRT_BASE;
+__kernel_size = _kernel_end - __kernel_virt_start;
+
+/* Compatibility symbol */
+__kernel_start = __kernel_virt_start;
