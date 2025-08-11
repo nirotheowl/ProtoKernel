@@ -272,9 +272,12 @@ _boot_start:
      * We need:
      * - 1 L2 (root) page table
      * - 1 L1 page table for identity mapping
-     * Place them after kernel end, aligned to page boundaries */
+     * - 1 L1 page table for kernel mapping
+     * Place them after kernel end with 4KB padding, aligned to page boundaries */
     
     la t0, _kernel_end
+    li t1, 0x1000               /* Add 4KB padding for safety */
+    add t0, t0, t1
     li t1, PAGE_SIZE - 1
     add t0, t0, t1              /* Round up to page boundary */
     not t1, t1
@@ -377,12 +380,9 @@ _boot_start:
     j .Ldtb_ok                         /* DTB is in mapped region */
     
 .Ldtb_needs_copy:
-    /* Copy DTB to a safe location after page tables */
-    li t0, PAGE_SIZE
-    li t1, 3                    /* We allocated 3 page tables */
-    mul t0, t0, t1
-    add t0, s5, t0              /* t0 = address after page tables */
-    li t1, 0x1000               /* Add 4KB safety margin */
+    /* Copy DTB to a safe location 64KB after kernel end */
+    la t0, _kernel_end          /* Get kernel end address */
+    li t1, 0x10000              /* Add 64KB offset for safety */
     add t0, t0, t1
     li t1, PAGE_SIZE - 1
     add t0, t0, t1              /* Round up */
