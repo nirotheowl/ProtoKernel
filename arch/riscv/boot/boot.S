@@ -448,8 +448,9 @@ _boot_start:
     
     /* Install L1 page table for kernel mapping in L2 root table
      * The kernel virtual address starts at 0xFFFFFFFF80200000
-     * L2 index = (0xFFFFFFFF80200000 >> 30) & 0x1FF = 511 (last entry) */
-    li t0, 511                  /* L2 index for kernel space */
+     * In Sv39, this is sign-extended from 39-bit address 0x1FF80200000
+     * L2 index = (0x1FF80200000 >> 30) & 0x1FF = 0x7FE & 0x1FF = 510 */
+    li t0, 510                  /* L2 index for kernel space */
     slli t0, t0, 3              /* Multiply by 8 for byte offset */
     add t0, s5, t0              /* t0 = address of L2 PTE */
     
@@ -547,10 +548,39 @@ _boot_start:
 
     /*
      * Step 8: Jump to higher-half addresses
-     * TODO: Calculate jump target in virtual address space
-     * TODO: Use indirect jump to transition to virtual addresses
-     * TODO: Continue execution at higher_half label
+     * Transition from physical/identity-mapped addresses to kernel virtual addresses.
+     * After this jump, we'll be executing at 0xFFFFFFFF8XXXXXXX addresses.
      */
+    
+    /* Calculate the virtual address of higher_half label
+     * We need to compute the virtual-physical offset dynamically */
+    
+    /* Load physical address of higher_half first (PC-relative) */
+    lla t0, higher_half         /* t0 = physical address of higher_half */
+    
+    /* Calculate the virtual-physical offset
+     * Virtual kernel base is always 0xFFFFFFFF80200000 (link address)
+     * Physical base is in s2 (calculated dynamically at runtime)
+     * Offset = virtual_base - physical_base */
+    
+    /* Load virtual kernel base */
+    li t1, -1                   /* Load all 1s */
+    slli t1, t1, 32             /* t1 = 0xFFFFFFFF00000000 */
+    lui t2, 0x80200             /* Load 0x80200000 into upper bits */
+    or t1, t1, t2               /* t1 = 0xFFFFFFFF80200000 (virtual base) */
+    
+    /* Calculate offset: virtual_base - physical_base */
+    sub t1, t1, s2              /* t1 = offset */
+    
+    /* Add offset to physical address to get virtual address */
+    add t0, t0, t1              /* t0 = virtual address of higher_half */
+    
+    /* Jump to virtual address
+     * This is the critical transition to higher-half execution */
+    jr t0                       /* Jump to virtual address */
+    
+    /* We should never reach here */
+    unimp
 
 higher_half:
     /*
@@ -561,9 +591,34 @@ higher_half:
      * - Physical memory operations
      * - DMA and hardware interactions
      * This mirrors the ARM64 approach where TTBR0 maintains identity mapping.
-     * TODO: Switch to virtual stack pointer
      */
-
+    
+    /* Switch stack pointer to virtual address
+     * The stack is currently using physical addresses via identity mapping.
+     * Convert it to use kernel virtual addresses. */
+    
+    /* Calculate virtual-physical offset (same as for the jump)
+     * Virtual base: 0xFFFFFFFF80200000 (fixed link address)
+     * Physical base: s2 (calculated at runtime)
+     * Offset = virtual - physical */
+    
+    /* Load virtual kernel base */
+    li t0, -1                   /* Load all 1s */
+    slli t0, t0, 32             /* t0 = 0xFFFFFFFF00000000 */
+    lui t1, 0x80200             /* Load 0x80200000 into upper bits */
+    or t0, t0, t1               /* t0 = 0xFFFFFFFF80200000 (virtual base) */
+    
+    /* Calculate offset: virtual_base - physical_base */
+    sub t0, t0, s2              /* t0 = offset */
+    
+    /* Add offset to stack pointer */
+    add sp, sp, t0              /* sp = sp + offset (now virtual) */
+    
+    /* Now we're fully in higher-half:
+     * - PC is at virtual address
+     * - Stack is at virtual address
+     * - Identity mapping still available for physical access */
+    
     /*
      * Step 10: Set up trap vector
      * TODO: Load address of trap_vector
