@@ -510,12 +510,40 @@ _boot_start:
 
     /*
      * Step 7: Configure and enable MMU
-     * TODO: Set up SATP register with root page table address
-     * TODO: Use Sv39 mode (MODE=8 in SATP)
-     * TODO: Set ASID to 0 for kernel
-     * TODO: Execute sfence.vma to flush TLB
-     * TODO: Enable paging by writing SATP
+     * Set up SATP register to enable Sv39 paging with our page tables.
+     * After this, all memory accesses will go through the MMU.
      */
+    
+    /* Prepare SATP value
+     * SATP format for Sv39:
+     * [63:60] = MODE (8 for Sv39)
+     * [59:44] = ASID (0 for kernel)
+     * [43:0]  = PPN of root page table (44 bits)
+     */
+    
+    /* Get physical page number of root (L2) table */
+    mv t0, s5                   /* s5 = L2 root page table physical address */
+    srli t0, t0, PAGE_SHIFT     /* Convert to PPN (shift right by 12) */
+    
+    /* Set Sv39 mode (MODE = 8) */
+    li t1, SATP_MODE_SV39       /* Load mode value (8) */
+    slli t1, t1, 60             /* Shift to bits [63:60] */
+    
+    /* Combine MODE and PPN (ASID is 0 by default) */
+    or t0, t0, t1               /* t0 = SATP value */
+    
+    /* Flush TLB before enabling MMU */
+    sfence.vma zero, zero       /* Global TLB flush */
+    
+    /* Enable paging by writing SATP */
+    csrw satp, t0               /* Write SATP and enable MMU */
+    
+    /* Synchronize - ensure MMU change takes effect */
+    sfence.vma zero, zero       /* Flush TLB again after enabling */
+    
+    /* From here, the MMU is enabled.
+     * We're still executing via identity mapping at this point.
+     * The next instruction fetch will go through the page tables. */
 
     /*
      * Step 8: Jump to higher-half addresses
