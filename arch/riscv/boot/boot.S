@@ -390,19 +390,27 @@ _boot_start:
     and t0, t0, t1              /* Page-align the destination */
     
     /* Copy DTB header to get size (FDT format, size at offset 4) */
-    lw t1, 4(s1)                /* Load totalsize field (32-bit big-endian) */
+    lwu t1, 4(s1)               /* Load totalsize field (32-bit big-endian, unsigned) */
     
-    /* Convert from big-endian to little-endian */
-    slli t2, t1, 56
-    srli t2, t2, 56             /* Byte 0 -> position 0 */
-    slli t3, t1, 40
-    srli t3, t3, 48             /* Byte 1 -> position 1 */
-    slli t4, t1, 24
-    srli t4, t4, 40             /* Byte 2 -> position 2 */
-    srli t5, t1, 24             /* Byte 3 -> position 3 */
-    slli t5, t5, 24
-    slli t3, t3, 8
-    slli t4, t4, 16
+    /* Convert from big-endian to little-endian (32-bit byte swap) */
+    /* Input:  0xAABBCCDD (big-endian) */
+    /* Output: 0xDDCCBBAA (little-endian) */
+    
+    /* Extract and reposition each byte */
+    andi t2, t1, 0xFF           /* t2 = byte 0 (DD) */
+    slli t2, t2, 24             /* Move to position 3 */
+    
+    srli t3, t1, 8
+    andi t3, t3, 0xFF           /* t3 = byte 1 (CC) */
+    slli t3, t3, 16             /* Move to position 2 */
+    
+    srli t4, t1, 16
+    andi t4, t4, 0xFF           /* t4 = byte 2 (BB) */
+    slli t4, t4, 8              /* Move to position 1 */
+    
+    srli t5, t1, 24             /* t5 = byte 3 (AA), already in position 0 */
+    
+    /* Combine bytes in new order */
     or t1, t2, t3
     or t1, t1, t4
     or t1, t1, t5               /* t1 = size in little-endian */
@@ -492,6 +500,13 @@ higher_half:
      * TODO: Disable interrupts
      * TODO: Enter infinite wait loop with wfi instruction
      */
+
+    /* TEMPORARY: Hang here since kernel call is not yet implemented */
+    /* When init_riscv is implemented, it would be called above and */
+    /* this would be the fallback if it unexpectedly returns */
+.Lboot_hang:
+    wfi                        /* Wait for interrupt */
+    j .Lboot_hang             /* Loop forever */
 
 /*
  * Helper Functions
