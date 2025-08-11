@@ -652,10 +652,55 @@ higher_half:
 
     /*
      * Step 11: Initialize CPU features
-     * TODO: Enable FPU if present (set FS bits in sstatus)
-     * TODO: Enable vector extensions if present
-     * TODO: Set up performance counters if needed
+     * 
+     * We take a conservative approach similar to FreeBSD/Linux:
+     * - FPU: Keep disabled initially (FS=OFF). Will be enabled lazily on first use.
+     * - Vector: Keep disabled initially (VS=OFF). Will be enabled lazily if supported.
+     * - Interrupts: Keep disabled until scheduler is ready.
+     * 
+     * This lazy initialization approach:
+     * 1. Reduces context switch overhead for processes that don't use these features
+     * 2. Saves power by keeping unused units disabled
+     * 3. Simplifies early boot (kernel rarely needs FPU/Vector)
      */
+    
+    /* Read current sstatus */
+    csrr t0, sstatus
+    
+    /* Clear FS (Floating-point Status) field to disable FPU
+     * FS[14:13] = 00 (Off) */
+    li t1, 0x6000               /* FS_MASK = (0x3 << 13) */
+    not t1, t1                  /* Invert to create clear mask */
+    and t0, t0, t1              /* Clear FS bits */
+    
+    /* Clear VS (Vector Status) field to disable vector unit if it exists
+     * VS[10:9] = 00 (Off) - Note: VS only exists in newer specs */
+    li t1, 0x600                /* VS_MASK = (0x3 << 9) */
+    not t1, t1                  /* Invert to create clear mask */
+    and t0, t0, t1              /* Clear VS bits (safe even if VS doesn't exist) */
+    
+    /* Ensure SUM bit is clear (disable supervisor access to user pages)
+     * This is a security feature - supervisor should explicitly enable when needed */
+    li t1, (1 << 18)            /* SUM is bit 18 */
+    not t1, t1
+    and t0, t0, t1              /* Clear SUM */
+    
+    /* Keep interrupts disabled (SIE=0) until we're ready
+     * The scheduler will enable interrupts when it's initialized */
+    li t1, (1 << 1)             /* SIE is bit 1 */
+    not t1, t1
+    and t0, t0, t1              /* Clear SIE */
+    
+    /* Write back modified sstatus */
+    csrw sstatus, t0
+    
+    /* Clear any pending interrupts */
+    csrw sip, zero              /* Clear all pending interrupts */
+    csrw sie, zero              /* Disable all interrupt sources for now */
+    
+    /* Optional: Detect available features for later use
+     * We could check misa register here to detect extensions, but
+     * for now we'll handle this in C code during later initialization */
 
     /*
      * Step 12: Set up boot data for kernel
