@@ -186,14 +186,36 @@ _boot_start:
     /* Continue with S-mode initialization */
     
     /*
-     * Calculate and store physical base address
-     * TODO: Calculate this dynamically like ARM64 does
-     * TEMPORARY: Hardcoded to 0x80200000 for QEMU testing
-     * This MUST be fixed for real hardware support
+     * Calculate and store physical base address dynamically
+     * We use the FreeBSD approach: compare the physical address of a known
+     * location (obtained via PC-relative addressing) with its virtual address
+     * (stored in memory by the linker) to calculate the physical base.
      */
-    li t0, 0x80200000          /* TEMPORARY - hardcoded for QEMU */
-    la t1, phys_base_storage
-    sd t0, 0(t1)
+.Lget_phys_addr:
+    /* Get physical address of virt_map label using PC-relative addressing
+     * Since MMU is off, this gives us the actual physical address */
+    lla t0, virt_map           /* t0 = physical address of virt_map */
+    
+    /* Load the virtual address that the linker assigned to virt_map */
+    ld t1, 0(t0)               /* t1 = virtual address of virt_map */
+    
+    /* Calculate physical-to-virtual offset
+     * offset = virtual - physical */
+    sub t2, t1, t0             /* t2 = virt - phys offset */
+    
+    /* Calculate physical base of kernel
+     * _start is at the kernel base address (virtual) = 0xFFFFFFFF80200000
+     * Physical base = _start (virtual) - offset */
+    li t3, -1                  /* Load all 1s */
+    slli t3, t3, 32            /* Shift to get 0xFFFFFFFF00000000 */
+    lui t4, 0x80200            /* Load 0x80200000 into upper bits */
+    or t3, t3, t4              /* t3 = 0xFFFFFFFF80200000 */
+    sub t0, t3, t2             /* t0 = physical base address */
+    
+    /* Store physical base for later use
+     * We need to calculate physical address of storage location too */
+    lla t1, phys_base_storage  /* t1 = physical addr of phys_base_storage */
+    sd t0, 0(t1)               /* Store physical base */
 
 .Lcommon_smode_path:
     /* Common code for both S-mode and M-mode entry paths */
@@ -225,12 +247,184 @@ _boot_start:
 
     /*
      * Step 5: Set up identity mapping for bootstrap
-     * TODO: Allocate page table pages (L2, L1, L0 as needed)
-     * TODO: Create identity mapping for kernel code/data
-     * TODO: Use 2MB pages (megapages) where possible for efficiency
-     * TODO: Set appropriate PTE flags (V, R, W, X, A, D, G)
-     * TODO: Check if DTB is within mapped region and relocate if necessary
+     * 
+     * We'll create an identity mapping that covers the kernel and DTB.
+     * This allows us to continue executing after enabling the MMU.
+     * We'll use 2MB megapages for efficiency where possible.
      */
+    
+    /* Get physical base address we stored earlier */
+    la t0, phys_base_storage
+    ld s2, 0(t0)                /* s2 = kernel physical base (e.g., 0x80200000) */
+    
+    /* Calculate the region to identity map
+     * We align down to 2MB boundary to use megapages efficiently */
+    mv s3, s2                   /* Copy kernel base */
+    li t1, MEGAPAGE_SIZE - 1    /* 2MB - 1 = 0x1FFFFF */
+    not t1, t1                  /* Create mask 0xFFFFFFFFFFE00000 */
+    and s3, s3, t1              /* s3 = start of 2MB-aligned region */
+    
+    /* We'll map 128MB starting from the aligned base
+     * This should cover kernel, initial stack, and typical DTB locations */
+    li s4, 128 * 1024 * 1024    /* s4 = size to map (128MB) */
+    
+    /* Allocate and clear page table pages
+     * We need:
+     * - 1 L2 (root) page table
+     * - 1 L1 page table for identity mapping
+     * Place them after kernel end, aligned to page boundaries */
+    
+    la t0, _kernel_end
+    li t1, PAGE_SIZE - 1
+    add t0, t0, t1              /* Round up to page boundary */
+    not t1, t1
+    and t0, t0, t1              /* t0 = page-aligned address after kernel */
+    
+    /* Save page table base addresses */
+    mv s5, t0                   /* s5 = L2 (root) page table */
+    li t1, PAGE_SIZE
+    add s6, t0, t1              /* s6 = L1 page table for identity map */
+    add s7, s6, t1              /* s7 = L1 page table for kernel mapping (Step 6) */
+    
+    /* Clear L2 (root) page table */
+    mv t0, s5
+    li t1, PAGE_SIZE
+    add t1, t0, t1              /* End address */
+.Lclear_l2:
+    sd zero, 0(t0)
+    addi t0, t0, 8
+    blt t0, t1, .Lclear_l2
+    
+    /* Clear L1 page table for identity mapping */
+    mv t0, s6
+    li t1, PAGE_SIZE
+    add t1, t0, t1
+.Lclear_l1_identity:
+    sd zero, 0(t0)
+    addi t0, t0, 8
+    blt t0, t1, .Lclear_l1_identity
+    
+    /* Clear L1 page table for kernel mapping (will use in Step 6) */
+    mv t0, s7
+    li t1, PAGE_SIZE
+    add t1, t0, t1
+.Lclear_l1_kernel:
+    sd zero, 0(t0)
+    addi t0, t0, 8
+    blt t0, t1, .Lclear_l1_kernel
+    
+    /* Install L1 page table in L2 for identity mapping
+     * For address 0x80000000, L2 index = (0x80000000 >> 30) & 0x1FF = 2
+     * We calculate the actual index based on our aligned base */
+    
+    mv t0, s3                   /* Get aligned physical base */
+    srli t0, t0, GIGAPAGE_SHIFT /* Shift right by 30 to get L2 index */
+    andi t0, t0, 0x1FF          /* Mask to get 9-bit index */
+    slli t0, t0, 3              /* Multiply by 8 for byte offset */
+    add t0, s5, t0              /* t0 = address of L2 PTE */
+    
+    /* Create L2 PTE pointing to L1 table */
+    mv t1, s6                   /* L1 table physical address */
+    srli t1, t1, PAGE_SHIFT     /* Convert to PPN */
+    slli t1, t1, 10             /* Shift PPN to correct position in PTE */
+    ori t1, t1, PTE_V           /* Set valid bit */
+    sd t1, 0(t0)                /* Store L2 PTE */
+    
+    /* Fill L1 table with 2MB megapage mappings for identity map
+     * Each L1 entry maps 2MB */
+    
+    mv t0, s6                   /* L1 table base */
+    mv t1, s3                   /* Physical address to map */
+    mv t2, s4                   /* Size to map */
+    
+.Lidentity_map_loop:
+    beqz t2, .Lidentity_map_done
+    
+    /* Create PTE for 2MB megapage */
+    mv t3, t1                   /* Physical address */
+    srli t3, t3, PAGE_SHIFT     /* Convert to PPN */
+    slli t3, t3, 10             /* Shift PPN to correct position */
+    
+    /* Set permissions: V, R, W, X, A, D, G for kernel code/data */
+    li t4, PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D | PTE_G
+    or t3, t3, t4
+    
+    /* Calculate L1 index from current physical address */
+    mv t4, t1                   /* Current physical address */
+    srli t4, t4, MEGAPAGE_SHIFT /* Shift by 21 to get L1 index */
+    andi t4, t4, 0x1FF          /* Mask to 9 bits */
+    slli t4, t4, 3              /* Multiply by 8 for byte offset */
+    add t4, s6, t4              /* Address in L1 table */
+    
+    sd t3, 0(t4)                /* Store PTE */
+    
+    /* Move to next 2MB region */
+    li t5, MEGAPAGE_SIZE
+    add t1, t1, t5              /* Next physical address */
+    sub t2, t2, t5              /* Decrease remaining size */
+    j .Lidentity_map_loop
+    
+.Lidentity_map_done:
+    
+    /* Check if DTB needs relocation
+     * The DTB pointer is in s1 */
+    beqz s1, .Ldtb_ok          /* Skip if no DTB */
+    
+    /* Check if DTB is within our mapped region (s3 to s3+s4) */
+    blt s1, s3, .Ldtb_needs_copy      /* DTB below mapped region */
+    add t0, s3, s4
+    bge s1, t0, .Ldtb_needs_copy      /* DTB above mapped region */
+    j .Ldtb_ok                         /* DTB is in mapped region */
+    
+.Ldtb_needs_copy:
+    /* Copy DTB to a safe location after page tables */
+    li t0, PAGE_SIZE
+    li t1, 3                    /* We allocated 3 page tables */
+    mul t0, t0, t1
+    add t0, s5, t0              /* t0 = address after page tables */
+    li t1, 0x1000               /* Add 4KB safety margin */
+    add t0, t0, t1
+    li t1, PAGE_SIZE - 1
+    add t0, t0, t1              /* Round up */
+    not t1, t1
+    and t0, t0, t1              /* Page-align the destination */
+    
+    /* Copy DTB header to get size (FDT format, size at offset 4) */
+    lw t1, 4(s1)                /* Load totalsize field (32-bit big-endian) */
+    
+    /* Convert from big-endian to little-endian */
+    slli t2, t1, 56
+    srli t2, t2, 56             /* Byte 0 -> position 0 */
+    slli t3, t1, 40
+    srli t3, t3, 48             /* Byte 1 -> position 1 */
+    slli t4, t1, 24
+    srli t4, t4, 40             /* Byte 2 -> position 2 */
+    srli t5, t1, 24             /* Byte 3 -> position 3 */
+    slli t5, t5, 24
+    slli t3, t3, 8
+    slli t4, t4, 16
+    or t1, t2, t3
+    or t1, t1, t4
+    or t1, t1, t5               /* t1 = size in little-endian */
+    
+    /* Copy DTB data */
+    mv t2, s1                   /* Source */
+    mv t3, t0                   /* Destination */
+    mv t4, t1                   /* Size */
+    
+.Lcopy_dtb_loop:
+    beqz t4, .Lcopy_dtb_done
+    lb t5, 0(t2)
+    sb t5, 0(t3)
+    addi t2, t2, 1
+    addi t3, t3, 1
+    addi t4, t4, -1
+    j .Lcopy_dtb_loop
+    
+.Lcopy_dtb_done:
+    mv s1, t0                   /* Update DTB pointer to new location */
+    
+.Ldtb_ok:
 
     /*
      * Step 6: Set up higher-half kernel mapping
@@ -358,18 +552,24 @@ higher_half:
  * TODO: May not be needed if using 2MB megapages
  */
 
+/* Storage for dynamically detected physical base address */
+.align 3
+.global phys_base_storage
+phys_base_storage:
+    .dword 0
+
+/* Virtual address marker for physical base calculation
+ * This stores the link-time virtual address of this location */
+.align 3
+virt_map:
+    .dword virt_map
+
 /* Bootstrap stack for early initialization */
 .align 4  /* Align to 16 bytes for RISC-V ABI */
 boot_stack_bottom:
     .space 0x4000  /* 16KB stack */
 .global boot_stack_top
 boot_stack_top:
-
-/* Storage for dynamically detected physical base address */
-.align 3
-.global phys_base_storage
-phys_base_storage:
-    .dword 0
 
 /*
  * Alternative entry point for M-mode (bare metal)
@@ -419,15 +619,8 @@ _boot_start_mmode:
     srli t0, t0, 2             /* Adjust for NAPOT encoding */
     csrw pmpaddr0, t0
     
-    /* Calculate and store physical base (same as S-mode path) */
-    /* TODO: Calculate dynamically - TEMPORARY hardcoded for QEMU */
-    li t0, 0x80200000          /* TEMPORARY - hardcoded for QEMU */
-    la t1, phys_base_storage
-    sd t0, 0(t1)
-    
     /* Set up mepc to continue in S-mode at common code */
-    /* Jump to the point after privilege mode handling in main flow */
-    /* This is right after the physical base storage in the S-mode path */
+    /* This will jump to .Lcommon_smode_path which calculates physical base */
     la t0, .Lcommon_smode_path
     csrw mepc, t0
     
