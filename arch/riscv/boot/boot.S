@@ -138,15 +138,14 @@
 .equ PRV_S, 1    /* Supervisor mode */
 .equ PRV_M, 3    /* Machine mode */
 
-/*
- * RISC-V Linux Boot Image Header
- * ===============================
- * Required for bootloader compatibility (U-Boot, OpenSBI, QEMU, etc.)
- * Based on Linux kernel RISC-V image header format
- */
-
 _start:
-    /* Jump over the header to actual boot code */
+
+    /* RISC-V "Linux" boot image header: 
+     *
+     * Some bootloaders rely on this header (U-Boot, etc) for common 
+     * commands that are useful or simplify using the kernel binary/image. 
+     */
+
     j       _boot_start              /* offset 0x00: jump to actual code */
     .word   0                        /* offset 0x04: reserved */
     .dword  0x0                      /* offset 0x08: text_offset (0 = 2MB aligned) */
@@ -158,40 +157,33 @@ _start:
     .ascii  "RISCV\0\0\0"            /* offset 0x30: magic "RISCV" */
     .dword  0                        /* offset 0x38: reserved */
 
-/* Ensure we start actual code at offset 64 (0x40) from _start */
+/* Actual start needs to be at offset 64 (0x40) from _start */
 .align 6
 _boot_start:
-    /*
-     * Save boot parameters
-     * Bootloader passes: a0=hartid, a1=dtb pointer
-     * Save in callee-saved registers that won't be clobbered
-     */
+
+    /* Save boot parameters/data. 
+     * Bootloader passes: a0=hart_idm a1=dtb pointer 
+     * Save in registers that are safe 
+     */ 
     mv s0, a0                   /* s0 = hartid */
     mv s1, a1                   /* s1 = device tree pointer */
     
     /*
-     * Note: DTB relocation will be handled after we set up identity mapping
-     * We need to know our physical address range first to determine if DTB
-     * is in a safe location. For now, just preserve the pointer.
-     */
-
-    /*
      * Privilege mode handling
      * 
      * Standard entry (_start) assumes S-mode (OpenSBI/UEFI)
-     * For bare metal M-mode, see _start_mmode entry point below
+     * so assuming we are in S-mode continue with initialization. 
      */
     
-    /* We're in S-mode (entered via OpenSBI/firmware) */
-    /* Continue with S-mode initialization */
-    
-    /*
-     * Calculate and store physical base address dynamically
-     * We use the FreeBSD approach: compare the physical address of a known
-     * location (obtained via PC-relative addressing) with its virtual address
-     * (stored in memory by the linker) to calculate the physical base.
-     */
 .Lget_phys_addr:
+
+    /* Caclculate and store physical base address dynamically. 
+     * We use the same approach FreeBSD uses: 
+     * compare the physical address of a known location (obtained 
+     * via PC-relative addressing) with its virtual address (stored
+     * in memory by the linker) to calculate the physical base.
+     */
+
     /* Get physical address of virt_map label using PC-relative addressing
      * Since MMU is off, this gives us the actual physical address */
     lla t0, virt_map           /* t0 = physical address of virt_map */
@@ -218,6 +210,7 @@ _boot_start:
     sd t0, 0(t1)               /* Store physical base */
 
 .Lcommon_smode_path:
+
     /* Common code for both S-mode and M-mode entry paths */
     /* At this point we're in S-mode with boot params saved */
     
@@ -238,6 +231,7 @@ _boot_start:
     la t1, __bss_end            /* Load BSS end address */
     
 .Lclear_bss_loop:
+
     beq t0, t1, .Lclear_bss_done   /* If start == end, we're done */
     sd zero, 0(t0)              /* Store zero at current address */
     addi t0, t0, 8              /* Move to next 8-byte word */
@@ -293,7 +287,9 @@ _boot_start:
     mv t0, s5
     li t1, PAGE_SIZE
     add t1, t0, t1              /* End address */
+
 .Lclear_l2:
+
     sd zero, 0(t0)
     addi t0, t0, 8
     blt t0, t1, .Lclear_l2
@@ -302,7 +298,9 @@ _boot_start:
     mv t0, s6
     li t1, PAGE_SIZE
     add t1, t0, t1
+
 .Lclear_l1_identity:
+
     sd zero, 0(t0)
     addi t0, t0, 8
     blt t0, t1, .Lclear_l1_identity
@@ -311,7 +309,9 @@ _boot_start:
     mv t0, s7
     li t1, PAGE_SIZE
     add t1, t0, t1
+
 .Lclear_l1_kernel:
+
     sd zero, 0(t0)
     addi t0, t0, 8
     blt t0, t1, .Lclear_l1_kernel
@@ -341,6 +341,7 @@ _boot_start:
     mv t2, s4                   /* Size to map */
     
 .Lidentity_map_loop:
+
     beqz t2, .Lidentity_map_done
     
     /* Create PTE for 2MB megapage */
@@ -369,17 +370,10 @@ _boot_start:
     
 .Lidentity_map_done:
     
-    /* Check if DTB needs relocation
-     * The DTB pointer is in s1 */
+    /* Always relocate DTB to a consistent location
+     * This ensures DTB is always at a known offset from kernel end */
     beqz s1, .Ldtb_ok          /* Skip if no DTB */
-    
-    /* Check if DTB is within our mapped region (s3 to s3+s4) */
-    blt s1, s3, .Ldtb_needs_copy      /* DTB below mapped region */
-    add t0, s3, s4
-    bge s1, t0, .Ldtb_needs_copy      /* DTB above mapped region */
-    j .Ldtb_ok                         /* DTB is in mapped region */
-    
-.Ldtb_needs_copy:
+
     /* Copy DTB to a safe location 64KB after kernel end */
     la t0, _kernel_end          /* Get kernel end address */
     li t1, 0x10000              /* Add 64KB offset for safety */
@@ -393,8 +387,6 @@ _boot_start:
     lwu t1, 4(s1)               /* Load totalsize field (32-bit big-endian, unsigned) */
     
     /* Convert from big-endian to little-endian (32-bit byte swap) */
-    /* Input:  0xAABBCCDD (big-endian) */
-    /* Output: 0xDDCCBBAA (little-endian) */
     
     /* Extract and reposition each byte */
     andi t2, t1, 0xFF           /* t2 = byte 0 (DD) */
@@ -542,16 +534,14 @@ _boot_start:
     /* Synchronize - ensure MMU change takes effect */
     sfence.vma zero, zero       /* Flush TLB again after enabling */
     
-    /* From here, the MMU is enabled.
-     * We're still executing via identity mapping at this point.
-     * The next instruction fetch will go through the page tables. */
+    /* Assuming we made it past this point, the MMU is enabled. 
+     *
+     * We're still executing via the identity mapping, so the next 
+     * instruction fetch goes through the page tables. 
+     *
+     * The next step is to jump to the higher-half addresses, where 
+     * we will be executing at 0xFFFFFFFF8XXXXXXX addresses instead. 
 
-    /*
-     * Jump to higher-half addresses
-     * Transition from physical/identity-mapped addresses to kernel virtual addresses.
-     * After this jump, we'll be executing at 0xFFFFFFFF8XXXXXXX addresses.
-     */
-    
     /* Calculate the virtual address of higher_half label
      * We need to compute the virtual-physical offset dynamically */
     
@@ -579,20 +569,11 @@ _boot_start:
      * This is the critical transition to higher-half execution */
     jr t0                       /* Jump to virtual address */
     
-    /* We should never reach here */
+    /* In theory, we never reach here, so if we're here, get trapped. */ 
     unimp
 
 higher_half:
-    /*
-     * Continue with higher-half execution
-     * NOTE: We keep the identity mapping! It's needed for:
-     * - PMM bitmap storage
-     * - DTB access
-     * - Physical memory operations
-     * - DMA and hardware interactions
-     * This mirrors the ARM64 approach where TTBR0 maintains identity mapping.
-     */
-    
+
     /* Switch stack pointer to virtual address
      * The stack is currently using physical addresses via identity mapping.
      * Convert it to use kernel virtual addresses. */
@@ -617,7 +598,7 @@ higher_half:
     /* Now we're fully in higher-half:
      * - PC is at virtual address
      * - Stack is at virtual address
-     * - Identity mapping still available for physical access */
+     */ 
     
     /*
      * Set up trap vector
@@ -733,6 +714,7 @@ higher_half:
     jalr ra, t0, 0              /* Call init_riscv, ra = return address */
     
 .Lkernel_returned:
+
     /* We should never get here, but handle it gracefully */
 
     /*
@@ -744,14 +726,13 @@ higher_half:
     csrw sie, zero              /* Disable all interrupt sources */
     csrci sstatus, 0x2          /* Clear SIE bit in sstatus */
     
-    /* Infinite halt loop */
 .Lboot_hang:
-    wfi                        /* Wait for interrupt (low power) */
-    j .Lboot_hang              /* Loop forever if wfi returns */
 
-/*
- * Data Section
- */
+    /* Infinite halt loop */
+    wfi
+    j .Lboot_hang
+
+/* DATA SECTION STARTS HERE */
 
 .section .data
 .align 12  /* Align to page boundary (4KB) */
@@ -793,58 +774,4 @@ boot_stack_bottom:
 .global boot_stack_top
 boot_stack_top:
 
-/*
- * Alternative entry point for M-mode (bare metal)
- * This entry point is for systems that boot directly in M-mode
- * without OpenSBI or other firmware.
- */
-.section ".text.boot"
-.global _start_mmode
-_start_mmode:
-    /* Jump over header to M-mode boot code */
-    j       _boot_start_mmode
-    
-    /* Same header structure as _start */
-    .word   0                        /* offset 0x04: reserved */
-    .dword  0x0                      /* offset 0x08: text_offset */
-    .dword  _end - _start_mmode      /* offset 0x10: image_size */
-    .dword  0x0                      /* offset 0x18: flags */
-    .word   0x2                      /* offset 0x20: version */
-    .word   0                        /* offset 0x24: reserved */
-    .dword  0                        /* offset 0x28: reserved */
-    .ascii  "RISCV\0\0\0"            /* offset 0x30: magic */
-    .dword  0                        /* offset 0x38: reserved */
-
-.align 6
-_boot_start_mmode:
-    /* Save boot parameters (same as S-mode entry) */
-    mv s0, a0                   /* s0 = hartid */
-    mv s1, a1                   /* s1 = device tree pointer */
-    
-    /* We're in M-mode - set up S-mode and transition */
-    
-    /* Configure mstatus for S-mode operation */
-    li t0, 0x00001800          /* MPP[12:11] = 01 (S-mode) */
-    csrw mstatus, t0
-    
-    /* Delegate all exceptions and interrupts to S-mode */
-    li t0, 0xFFFF              /* Delegate all exceptions */
-    csrw medeleg, t0
-    li t0, 0xFFFF              /* Delegate all interrupts */
-    csrw mideleg, t0
-    
-    /* Configure PMP to allow S-mode access to all memory */
-    /* Set PMP to allow all accesses (R=1, W=1, X=1) for entire address space */
-    li t0, 0x1F                /* R=1, W=1, X=1, A=11 (NAPOT), L=0) */
-    csrw pmpcfg0, t0
-    li t0, -1                  /* Cover entire address space */
-    srli t0, t0, 2             /* Adjust for NAPOT encoding */
-    csrw pmpaddr0, t0
-    
-    /* Set up mepc to continue in S-mode at common code */
-    /* This will jump to .Lcommon_smode_path which calculates physical base */
-    la t0, .Lcommon_smode_path
-    csrw mepc, t0
-    
-    /* Return to S-mode */
-    mret
+/* End of boot.S */
