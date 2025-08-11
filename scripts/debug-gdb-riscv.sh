@@ -39,21 +39,21 @@ echo ""
 # Create a temporary GDB init file
 GDBINIT=$(mktemp)
 cat > "$GDBINIT" << EOF
-# Connect to QEMU
-target remote :$GDB_PORT
-
 # Set architecture
 set architecture riscv:rv64
+
+# Load symbols FIRST (before setting breakpoints)
+file $KERNEL_ELF
+
+# Connect to QEMU
+target remote :$GDB_PORT
 
 # Enable TUI mode
 tui enable
 
-# Set useful breakpoints
-break kernel_main
+# Set useful breakpoints (now that symbols are loaded)
+break init_riscv
 break _start
-
-# Load symbols
-file $KERNEL_ELF
 
 # Display registers and assembly
 layout regs

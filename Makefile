@@ -130,15 +130,15 @@ $(BUILD_DIR)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean
+# Clean all architectures
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR)
-
-# Clean all architectures
-.PHONY: cleanall
-cleanall:
 	rm -rf build/
+
+# Clean current architecture only
+.PHONY: clean-arch
+clean-arch:
+	rm -rf $(BUILD_DIR)
 
 # Run targets
 .PHONY: run
@@ -163,8 +163,8 @@ help:
 	@echo "======================================"
 	@echo "Build targets:"
 	@echo "  make [ARCH=arm64] [PLATFORM=qemu_virt] - Build kernel for specified architecture/platform"
-	@echo "  make clean         - Remove build artifacts for current ARCH"
-	@echo "  make cleanall      - Remove all build artifacts"
+	@echo "  make clean         - Remove all build artifacts"
+	@echo "  make clean-arch    - Remove build artifacts for current ARCH only"
 	@echo ""
 	@echo "Run targets:"
 	@echo "  make run           - Run kernel in QEMU (headless)"

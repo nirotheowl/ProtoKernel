@@ -63,26 +63,26 @@ void init_riscv(unsigned long hart_id, void *dtb) {
     arch_install_exception_handlers();
     
     // Print boot message for debugging
-    early_puts("\n[RISC-V] Boot successful!\n");
-    early_puts("[RISC-V] Hart ID: ");
-    early_putc('0' + (hart_id & 0xF));  // Simple hex digit
-    early_puts("\n[RISC-V] DTB at: 0x");
+    // early_puts("\n[RISC-V] Boot successful!\n");
+    // early_puts("[RISC-V] Hart ID: ");
+    // early_putc('0' + (hart_id & 0xF));  // Simple hex digit
+    // early_puts("\n[RISC-V] DTB at: 0x");
     
     // Print DTB address
     uintptr_t addr = (uintptr_t)dtb;
     for (int i = 60; i >= 0; i -= 4) {
         int digit = (addr >> i) & 0xF;
-        early_putc(digit < 10 ? '0' + digit : 'a' + digit - 10);
+        // early_putc(digit < 10 ? '0' + digit : 'a' + digit - 10);
     }
-    early_puts("\n");
+    // early_puts("\n");
     
-    early_puts("[RISC-V] Jumping to kernel_main...\n");
+    // early_puts("[RISC-V] Jumping to kernel_main...\n");
     
     // Jump to common kernel initialization
     // kernel_main(dtb);  // Currently commented out for testing
     
     // Test complete message (temporary - remove when kernel_main is enabled)
-    early_puts("[RISC-V] RISC-V initialization test complete. Halting...\n");
+    // early_puts("[RISC-V] RISC-V initialization test complete. Halting...\n");
     while (1) {
         __asm__ volatile("wfi");
     }

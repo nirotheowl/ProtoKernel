@@ -23,7 +23,7 @@ echo ""
 # Use binary file for proper DTB loading, GDB will load symbols from ELF
 qemu-system-riscv64 \
     -M virt \
-    -bios none \
+    -bios default \
     -m 1G \
     -nographic \
     -kernel "$KERNEL_BIN" \
