@@ -162,7 +162,7 @@ _start:
 .align 6
 _boot_start:
     /*
-     * Step 1: Save boot parameters
+     * Save boot parameters
      * Bootloader passes: a0=hartid, a1=dtb pointer
      * Save in callee-saved registers that won't be clobbered
      */
@@ -176,7 +176,7 @@ _boot_start:
      */
 
     /*
-     * Step 2: Privilege mode handling
+     * Privilege mode handling
      * 
      * Standard entry (_start) assumes S-mode (OpenSBI/UEFI)
      * For bare metal M-mode, see _start_mmode entry point below
@@ -222,7 +222,7 @@ _boot_start:
     /* At this point we're in S-mode with boot params saved */
     
     /*
-     * Step 3: Set up early stack
+     * Set up early stack
      * Load the physical address of our bootstrap stack
      * Stack grows down, so we use the top address
      */
@@ -230,7 +230,7 @@ _boot_start:
     /* Stack is already 16-byte aligned from .align directive */
 
     /*
-     * Step 4: Clear BSS section
+     * Clear BSS section
      * Zero out all uninitialized global variables
      * We're still using physical addresses (MMU not enabled yet)
      */
@@ -246,7 +246,7 @@ _boot_start:
 .Lclear_bss_done:
 
     /*
-     * Step 5: Set up identity mapping for bootstrap
+     * Set up identity mapping for bootstrap
      * 
      * We'll create an identity mapping that covers the kernel and DTB.
      * This allows us to continue executing after enabling the MMU.
@@ -287,7 +287,7 @@ _boot_start:
     mv s5, t0                   /* s5 = L2 (root) page table */
     li t1, PAGE_SIZE
     add s6, t0, t1              /* s6 = L1 page table for identity map */
-    add s7, s6, t1              /* s7 = L1 page table for kernel mapping (Step 6) */
+    add s7, s6, t1              /* s7 = L1 page table for kernel mapping */
     
     /* Clear L2 (root) page table */
     mv t0, s5
@@ -307,7 +307,7 @@ _boot_start:
     addi t0, t0, 8
     blt t0, t1, .Lclear_l1_identity
     
-    /* Clear L1 page table for kernel mapping (will use in Step 6) */
+    /* Clear L1 page table for kernel mapping */
     mv t0, s7
     li t1, PAGE_SIZE
     add t1, t0, t1
@@ -435,7 +435,7 @@ _boot_start:
 .Ldtb_ok:
 
     /*
-     * Step 6: Set up higher-half kernel mapping
+     * Set up higher-half kernel mapping
      * Map the kernel from its virtual address (0xFFFFFFFF80200000) to its
      * physical address. We'll use 2MB megapages for efficiency.
      * 
@@ -510,7 +510,7 @@ _boot_start:
 .Lkernel_map_done:
 
     /*
-     * Step 7: Configure and enable MMU
+     * Configure and enable MMU
      * Set up SATP register to enable Sv39 paging with our page tables.
      * After this, all memory accesses will go through the MMU.
      */
@@ -547,7 +547,7 @@ _boot_start:
      * The next instruction fetch will go through the page tables. */
 
     /*
-     * Step 8: Jump to higher-half addresses
+     * Jump to higher-half addresses
      * Transition from physical/identity-mapped addresses to kernel virtual addresses.
      * After this jump, we'll be executing at 0xFFFFFFFF8XXXXXXX addresses.
      */
@@ -584,7 +584,7 @@ _boot_start:
 
 higher_half:
     /*
-     * Step 9: Continue with higher-half execution
+     * Continue with higher-half execution
      * NOTE: We keep the identity mapping! It's needed for:
      * - PMM bitmap storage
      * - DTB access
@@ -620,7 +620,7 @@ higher_half:
      * - Identity mapping still available for physical access */
     
     /*
-     * Step 10: Set up trap vector
+     * Set up trap vector
      * Configure the supervisor trap vector to handle exceptions and interrupts.
      * We'll use direct mode (MODE=0) where all traps jump to the same handler.
      */
@@ -651,17 +651,13 @@ higher_half:
 .Ltrap_setup_done:
 
     /*
-     * Step 11: Initialize CPU features
+     * Initialize CPU features
      * 
      * We take a conservative approach similar to FreeBSD/Linux:
      * - FPU: Keep disabled initially (FS=OFF). Will be enabled lazily on first use.
      * - Vector: Keep disabled initially (VS=OFF). Will be enabled lazily if supported.
      * - Interrupts: Keep disabled until scheduler is ready.
      * 
-     * This lazy initialization approach:
-     * 1. Reduces context switch overhead for processes that don't use these features
-     * 2. Saves power by keeping unused units disabled
-     * 3. Simplifies early boot (kernel rarely needs FPU/Vector)
      */
     
     /* Read current sstatus */
@@ -698,73 +694,63 @@ higher_half:
     csrw sip, zero              /* Clear all pending interrupts */
     csrw sie, zero              /* Disable all interrupt sources for now */
     
-    /* Optional: Detect available features for later use
-     * We could check misa register here to detect extensions, but
-     * for now we'll handle this in C code during later initialization */
+    /*
+     * Set up boot data for kernel
+     * Prepare arguments for init_riscv according to RISC-V calling convention.
+     * 
+     * RISC-V calling convention:
+     * - a0-a7: Function arguments (first 8 integer/pointer arguments)
+     * - a0-a1: Also used for return values
+     * 
+     * init_riscv expects:
+     * - a0: hart_id (hardware thread ID)
+     * - a1: dtb (device tree blob pointer)
+     */
+    
+    /* Restore boot parameters from callee-saved registers
+     * We saved these at the very beginning:
+     * - s0 = hart_id
+     * - s1 = dtb pointer */
+    mv a0, s0                   /* a0 = hart_id */
+    mv a1, s1                   /* a1 = device tree pointer */
+    
+    /* Optional: Store kernel physical base for later use
+     * Some kernels need to know their physical load address */
+    la t0, kernel_phys_base     /* Load address of storage variable */
+    sd s2, 0(t0)                /* Store physical base (s2) */
 
     /*
-     * Step 12: Set up boot data for kernel
-     * TODO: Prepare arguments for kernel_main
-     * TODO: Pass hartid, device tree pointer, memory info
-     * TODO: Ensure proper register allocation per RISC-V ABI
+     * Jump to kernel main
+     * Call init_riscv with the prepared arguments.
+     * This function should not return, but we handle it gracefully if it does.
      */
+    
+    /* Load address of init_riscv function */
+    la ra, .Lkernel_returned    /* Set return address for debugging */
+    la t0, init_riscv           /* Load address of init_riscv */
+    
+    /* Jump to init_riscv(hart_id, dtb) */
+    jalr ra, t0, 0              /* Call init_riscv, ra = return address */
+    
+.Lkernel_returned:
+    /* We should never get here, but handle it gracefully */
 
     /*
-     * Step 13: Jump to kernel main
-     * TODO: Load address of kernel_main
-     * TODO: Call kernel_main with proper arguments
-     * TODO: Should never return, but handle if it does
+     * Halt if kernel_main returns
+     * If init_riscv unexpectedly returns, safely halt the system.
      */
-
-    /*
-     * Step 14: Halt if kernel_main returns
-     * TODO: Disable interrupts
-     * TODO: Enter infinite wait loop with wfi instruction
-     */
-
-    /* TEMPORARY: Hang here since kernel call is not yet implemented */
-    /* When init_riscv is implemented, it would be called above and */
-    /* this would be the fallback if it unexpectedly returns */
+    
+    /* Disable all interrupts to prevent any further processing */
+    csrw sie, zero              /* Disable all interrupt sources */
+    csrci sstatus, 0x2          /* Clear SIE bit in sstatus */
+    
+    /* Infinite halt loop */
 .Lboot_hang:
-    wfi                        /* Wait for interrupt */
-    j .Lboot_hang             /* Loop forever */
-
-/*
- * Helper Functions
- * ================
- */
-
-/*
- * create_page_table_entry:
- * TODO: Helper to create a PTE with given PA and flags
- * TODO: Handle different page sizes (4KB, 2MB, 1GB)
- * TODO: Set appropriate permission and attribute bits
- */
-
-/*
- * map_page:
- * TODO: Helper to map a virtual page to physical page
- * TODO: Walk page table hierarchy
- * TODO: Allocate intermediate tables if needed
- * TODO: Install PTE at appropriate level
- */
-
-/*
- * clear_page:
- * TODO: Helper to zero out a page
- * TODO: Use efficient sd instruction loop
- */
-
-/*
- * flush_tlb:
- * TODO: Helper to flush TLB entries
- * TODO: Use sfence.vma instruction
- * TODO: Handle ASID if needed
- */
+    wfi                        /* Wait for interrupt (low power) */
+    j .Lboot_hang              /* Loop forever if wfi returns */
 
 /*
  * Data Section
- * ============
  */
 
 .section .data
