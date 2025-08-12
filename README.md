@@ -2,25 +2,28 @@ This project is a 64-bit experimental kernel intended to be run on ARMv8 and RIS
 
 ## Prerequisites
 
+### ARM64 Prerequisites 
+
 Note: On some distributions of Linux, `aarch64-none-elf` (or equivalent) may not be available. It is
 **NOT** guaranteed that the `aarch64-linux-gnu-*` toolchain is compatible, so you may need to compile
 the toolchain yourself from https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads.
 
-### Ubuntu (22.04 or later)
+The `linux` versions are listed because as of writing this, they do work, but that could change. 
 
-Install the required packages (note: ARM64 toolchain not available, you have to compile that
-manually):
+#### Ubuntu (22.04 or later)
 
 ```bash
 sudo apt update
 sudo apt install \
+    gcc-aarch64-linux-gnu \
+    binutils-aarch64-linux-gnu \
     qemu-system-arm \
     make \
     gdb-multiarch \
     git
 ```
 
-### Arch Linux
+#### Arch Linux
 
 Install the required packages (note: some are AUR packages):
 
@@ -32,23 +35,66 @@ yay -S \
     arm-gnu-toolchain-aarch64-none-elf-bin
 ```
 
+### RISC-V Prerequisites
+
+The dependencies for RISC-V builds are different, namely the toolchain and QEMU packages. 
+
+Note: Similarly to ARM's toolchain availability on some distributions, there is no guarantee that
+the `riscv64-linux-gnu` version of the toolchains will be compatible with this kernel.
+
+#### Ubuntu (22.04 or later) 
+
+```bash
+sudo apt update
+sudo apt install \
+    gcc-riscv64-linux-gnu \
+    binutils-riscv64-linux-gnu \
+    qemu-system-misc \
+    make \
+    git
+```
+
+#### Arch Linux 
+
+```bash
+yay -S \
+    riscv64-elf-gcc \
+    riscv64-elf-binutils \
+    qemu-full \
+    make \
+    git
+``` 
+
 ## Building and Running
 
-1. Source the environment script:
+Source the environment script:
 ```bash
 source env.sh
 ```
 
-This sets up the build environment and provides helper functions.
-
-2. Build the kernel:
-```bash
-build
+Building for ARM64: 
+```bash 
+build_arm64 
 ```
 
-3. Run the kernel in QEMU:
-```bash
-run_emu
+Building for RISC-V: 
+```bash 
+build_riscv
 ```
 
-*Last Updated: 2025-08-06*
+Running the ARM kernel:
+```bash 
+run_emu_arm64
+```
+
+Running the RISC-V kernel: 
+```bash 
+run_emu_riscv
+```
+
+## Documentation 
+
+Details of kernel development, scripts for using the kernel and other relevant information can be 
+found in the `docs/` folder. 
+
+*Last Updated: 2025-08-12*

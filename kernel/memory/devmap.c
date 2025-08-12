@@ -15,7 +15,7 @@
 #include <device/device.h>
 #include <device/resource.h>
 
-/* Device mapping configuration */
+// Device mapping configuration
 #define DEVMAP_MAX_ENTRIES      512
 #ifdef __riscv
 /* RISC-V: Use high virtual addresses that are valid for Sv39 
@@ -24,47 +24,47 @@
 #define DEVMAP_VA_START         0xFFFFFFE000000000UL  /* Valid Sv39 address with bit 38=1 */
 #define DEVMAP_VA_END           0xFFFFFFE100000000UL  /* 4GB for device mappings */
 #else
-/* ARM64: Original addresses */
+// ARM64: Original addresses
 #define DEVMAP_VA_START         0xFFFF000100000000UL  /* Start after kernel space */
 #define DEVMAP_VA_END           0xFFFF000200000000UL  /* 1TB for device mappings */
 #endif
 
-/* Device mapping table entry */
+// Device mapping table entry
 struct devmap_table_entry {
     devmap_entry_t entry;
     uint64_t allocated_va;
     bool in_use;
 };
 
-/* Device mapping table - dynamically allocated */
+// Device mapping table - dynamically allocated
 static struct devmap_table_entry *devmap_table = NULL;
 static int devmap_count = 0;
 static uint64_t devmap_next_va = DEVMAP_VA_START;
 static bool devmap_initialized = false;
 
-/* Current platform */
+// Current platform
 static const platform_desc_t *current_platform = NULL;
 
-/* Forward declarations */
+// Forward declarations
 extern const platform_desc_t qemu_virt_platform;
 extern const platform_desc_t odroid_m2_platform;
 static int devmap_map_device_tree(struct device *dev);
 
-/* Platform list - add new platforms here */
+// Platform list - add new platforms here
 static const platform_desc_t *platforms[] = {
     &qemu_virt_platform,
     &odroid_m2_platform,
     NULL
 };
 
-/* Initialize device mapping system */
+// Initialize device mapping system
 void devmap_init(void)
 {
     if (devmap_initialized) {
         return;
     }
 
-    /* Allocate device mapping table */
+    // Allocate device mapping table
     size_t table_size = sizeof(struct devmap_table_entry) * DEVMAP_MAX_ENTRIES;
     size_t pages_needed = (table_size + PAGE_SIZE - 1) / PAGE_SIZE;
     uint64_t phys_addr = pmm_alloc_pages(pages_needed);
@@ -74,7 +74,7 @@ void devmap_init(void)
         return;
     }
     
-    /* Debug: Check DMAP range */
+    // Debug: Check DMAP range
     uart_puts("DEVMAP: Allocated phys addr: ");
     uart_puthex(phys_addr);
     uart_puts("\n");
@@ -84,7 +84,7 @@ void devmap_init(void)
     uart_puthex(dmap_phys_max);
     uart_puts("\n");
     
-    /* Map the allocated pages using DMAP */
+    // Map the allocated pages using DMAP
     devmap_table = (struct devmap_table_entry *)PHYS_TO_DMAP(phys_addr);
     
     uart_puts("DEVMAP: Virtual addr: ");
@@ -97,7 +97,7 @@ void devmap_init(void)
         return;
     }
     
-    /* Clear device mapping table */
+    // Clear device mapping table
     memset(devmap_table, 0, table_size);
     devmap_count = 0;
     devmap_next_va = DEVMAP_VA_START;
@@ -108,7 +108,7 @@ void devmap_init(void)
     uart_puthex(table_size);
     uart_puts(" bytes) for device table\n");
 
-    /* Detect current platform (still useful for platform-specific behavior) */
+    // Detect current platform (still useful for platform-specific behavior)
     for (int i = 0; platforms[i] != NULL; i++) {
         if (platforms[i]->detect && platforms[i]->detect()) {
             current_platform = platforms[i];
@@ -116,10 +116,10 @@ void devmap_init(void)
         }
     }
 
-    /* No default platform - must be explicitly detected */
+    // No default platform - must be explicitly detected
     if (!current_platform) {
 #ifdef __riscv
-        /* For RISC-V, default to QEMU virt if no platform detected */
+        // For RISC-V, default to QEMU virt if no platform detected
         current_platform = &qemu_virt_platform;
         uart_puts("DEVMAP: Using default RISC-V QEMU virt platform\n");
 #else
@@ -131,8 +131,8 @@ void devmap_init(void)
         uart_puts("\n");
     }
 
-    /* Map all devices discovered from the device tree */
-    /* This is the ONLY place we map devices - no duplication */
+    // Map all devices discovered from the device tree
+    // This is the ONLY place we map devices - no duplication
     int mapped = devmap_map_all_devices();
     if (mapped < 0) {
         uart_puts("DEVMAP: Failed to map devices from device tree\n");
@@ -145,13 +145,13 @@ void devmap_init(void)
     devmap_initialized = true;
 }
 
-/* Allocate virtual address for device mapping */
+// Allocate virtual address for device mapping
 static uint64_t devmap_alloc_va(size_t size)
 {
-    /* Align size to page boundary */
+    // Align size to page boundary
     size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 
-    /* Check if we have space */
+    // Check if we have space
     if (devmap_next_va + size > DEVMAP_VA_END) {
         return 0;
     }
@@ -162,7 +162,7 @@ static uint64_t devmap_alloc_va(size_t size)
     return va;
 }
 
-/* Add a device mapping entry */
+// Add a device mapping entry
 int devmap_add_entry(const devmap_entry_t *entry)
 {
     if (!entry || entry->size == 0) {
@@ -175,7 +175,7 @@ int devmap_add_entry(const devmap_entry_t *entry)
     }
 
     // uart_puts("  devmap_add_entry: copying entry\n");
-    /* Copy entry */
+    // Copy entry
     devmap_table[devmap_count].entry = *entry;
     devmap_table[devmap_count].in_use = true;
 
