@@ -17,8 +17,17 @@
 
 /* Device mapping configuration */
 #define DEVMAP_MAX_ENTRIES      512
+#ifdef __riscv
+/* RISC-V: Use high virtual addresses that are valid for Sv39 
+ * In Sv39, bit 38 determines sign extension. Since we want high addresses,
+ * bit 38 must be 1, and bits 63:39 must all be 1 for valid sign extension */
+#define DEVMAP_VA_START         0xFFFFFFE000000000UL  /* Valid Sv39 address with bit 38=1 */
+#define DEVMAP_VA_END           0xFFFFFFE100000000UL  /* 4GB for device mappings */
+#else
+/* ARM64: Original addresses */
 #define DEVMAP_VA_START         0xFFFF000100000000UL  /* Start after kernel space */
 #define DEVMAP_VA_END           0xFFFF000200000000UL  /* 1TB for device mappings */
+#endif
 
 /* Device mapping table entry */
 struct devmap_table_entry {
@@ -109,7 +118,13 @@ void devmap_init(void)
 
     /* No default platform - must be explicitly detected */
     if (!current_platform) {
+#ifdef __riscv
+        /* For RISC-V, default to QEMU virt if no platform detected */
+        current_platform = &qemu_virt_platform;
+        uart_puts("DEVMAP: Using default RISC-V QEMU virt platform\n");
+#else
         uart_puts("DEVMAP: WARNING: No platform detected\n");
+#endif
     } else {
         uart_puts("DEVMAP: Detected platform: ");
         uart_puts(current_platform->name);

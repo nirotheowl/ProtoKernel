@@ -1,32 +1,23 @@
 /*
  * kernel/memory/vmm.c
  *
- * Virtual Memory Manager implementation
- * Handles page table management and virtual memory operations
+ * Architecture-independent Virtual Memory Manager implementation
+ * Uses architecture-specific operations defined in vmm_arch.h
  */
 
 #include <memory/vmm.h>
+#include <memory/vmm_arch.h>
 #include <memory/pmm.h>
-/* paging.h constants now in vmm.h */
 #include <memory/vmparam.h>
+#include <drivers/fdt.h>
 #include <uart.h>
 #include <string.h>
 #include <stddef.h>
-#include <arch_interface.h>
-
-/* Additional PTE definitions not in paging.h */
-#define PTE_ADDR_MASK      0x0000FFFFFFFFF000UL  /* Bits 47:12 for address */
-#define PTE_AP_RW_EL1      PTE_AP_RW             /* Alias for clarity */
-#define PTE_AP_RO_EL1      PTE_AP_RO             /* Alias for clarity */
+#include <stdint.h>
 
 /* Global DMAP physical memory bounds */
 uint64_t dmap_phys_base = 0;
 uint64_t dmap_phys_max = 0;
-
-/* Memory attribute indices */
-#define PTE_ATTR_DEVICE    PTE_ATTRINDX(MT_DEVICE_nGnRnE)
-#define PTE_ATTR_NORMAL_NC PTE_ATTRINDX(MT_NORMAL_NC)
-#define PTE_ATTR_NORMAL    PTE_ATTRINDX(MT_NORMAL)
 
 /* Global kernel page table context */
 static vmm_context_t kernel_context;
@@ -37,9 +28,8 @@ static bool dmap_ready = false;
  * Boot page tables are in kernel physical range and use PHYS_TO_VIRT
  * New page tables allocated from PMM need DMAP access
  */
-static inline void* pt_phys_to_virt(uint64_t phys) {
+void* vmm_pt_phys_to_virt(uint64_t phys) {
     /* Check if in kernel physical range (boot page tables only) */
-    /* Boot page tables are from kernel_phys_base + text/data to about +64KB */
     if (phys >= kernel_phys_base && phys < (kernel_phys_base + 0x40000)) {
         /* Boot page tables - use kernel virtual mapping */
         return (void*)PHYS_TO_VIRT(phys);
@@ -64,7 +54,7 @@ static inline void* pt_phys_to_virt(uint64_t phys) {
 }
 
 /* Helper to convert page table virtual address to physical */
-static inline uint64_t pt_virt_to_phys(void *virt) {
+uint64_t vmm_pt_virt_to_phys(void *virt) {
     uint64_t va = (uint64_t)virt;
     
     /* Check if in DMAP range first */
@@ -80,268 +70,86 @@ static inline uint64_t pt_virt_to_phys(void *virt) {
     }
 }
 
-/* Page table entry attribute conversion */
-static uint64_t vmm_attrs_to_pte(uint64_t attrs) {
-    uint64_t pte = PTE_AF;
-    
-    /* Access permissions */
-    if (attrs & VMM_ATTR_WRITE) {
-        pte |= PTE_AP_RW_EL1;
-    } else if (attrs & VMM_ATTR_READ) {
-        pte |= PTE_AP_RO_EL1;
-    }
-    
-    /* Execute permissions */
-    if (!(attrs & VMM_ATTR_EXECUTE)) {
-        pte |= PTE_UXN | PTE_PXN;
-    }
-    
-    /* Memory type */
-    if (attrs & VMM_ATTR_DEVICE) {
-        pte |= PTE_ATTR_DEVICE;
-    } else if (attrs & VMM_ATTR_NOCACHE) {
-        pte |= PTE_ATTR_NORMAL_NC;
-    } else {
-        pte |= PTE_ATTR_NORMAL;
-    }
-    
-    /* Shareability */
-    pte |= PTE_SH_INNER;
-    
-    return pte;
-}
-
-/* Get page table entry at specific level */
-static uint64_t* vmm_get_pte(uint64_t *table, uint64_t vaddr, int level) {
-    static int get_pte_count = 0;
-    get_pte_count++;
-    uint64_t idx;
-    
-    // if (get_pte_count <= 20) {
-    //     uart_puts("    vmm_get_pte: vaddr=");
-    //     uart_puthex(vaddr);
-    //     uart_puts(" level=");
-    //     uart_putc('0' + level);
-    //     uart_puts(" table=");
-    //     uart_puthex((uint64_t)table);
-    // }
-    
-    switch (level) {
-    case PT_LEVEL_0:
-        idx = (vaddr >> 39) & 0x1FF;
-        break;
-    case PT_LEVEL_1:
-        idx = (vaddr >> 30) & 0x1FF;
-        /* Debug: Let's see the actual calculation */
-        // if ((vaddr & 0xFFFF000000000000UL) == 0xFFFF000000000000UL) {
-        //     uart_puts("VMM: L1 calculation for ");
-        //     uart_puthex(vaddr);
-        //     uart_puts(" -> shifted=");
-        //     uart_puthex(vaddr >> 30);
-        //     uart_puts(" -> idx=");
-        //     uart_puthex(idx);
-        //     uart_puts("\n");
-        // }
-        break;
-    case PT_LEVEL_2:
-        idx = (vaddr >> 21) & 0x1FF;
-        break;
-    case PT_LEVEL_3:
-        idx = (vaddr >> 12) & 0x1FF;
-        break;
-    default:
-        return NULL;
-    }
-    
-    // if (get_pte_count <= 20) {
-    //     uart_puts(" idx=");
-    //     uart_puthex(idx);
-    //     uart_puts(" -> &table[");
-    //     uart_puthex(idx);
-    //     uart_puts("]=");
-    //     uart_puthex((uint64_t)&table[idx]);
-    //     uart_puts("\n");
-    // }
-    
-    /* Debug output for DMAP */
-    // if ((vaddr & 0xFFFFF00000000000UL) == (DMAP_BASE & 0xFFFFF00000000000UL) && level == PT_LEVEL_1) {
-    //     uart_puts("VMM: L1 index for DMAP addr ");
-    //     uart_puthex(vaddr);
-    //     uart_puts(" is ");
-    //     uart_puthex(idx);
-    //     uart_puts("\n");
-    // }
-    
-    return &table[idx];
-}
-
-/* Walk page tables, creating entries as needed */
-static uint64_t* vmm_walk_create(vmm_context_t *ctx, uint64_t vaddr, int target_level) {
-    /* Debug first few calls */
-    static int debug_count = 0;
-    // if (debug_count < 10) {
-    //     uart_puts("vmm_walk_create: vaddr=");
-    //     uart_puthex(vaddr);
-    //     uart_puts(" target_level=");
-    //     uart_putc('0' + target_level);
-    //     uart_puts("\n");
-    //     debug_count++;
-    // }
-    
-    uint64_t *table = ctx->l0_table;
-    uint64_t *pte;
-    
-    /* Both TTBR0 and TTBR1 start from L0 */
-    int start_level = PT_LEVEL_0;
-    
-    for (int level = start_level; level < target_level; level++) {
-        // if (debug_count <= 10) {
-        //     uart_puts("  Level ");
-        //     uart_putc('0' + level);
-        //     uart_puts(": table=");
-        //     uart_puthex((uint64_t)table);
-        //     uart_puts("\n");
-        // }
-        
-        pte = vmm_get_pte(table, vaddr, level);
-        
-        /* Debug: Check if pte is valid before dereferencing */
-        if (!pte) {
-            uart_puts("VMM: vmm_get_pte returned NULL at level ");
-            uart_putc('0' + level);
-            uart_puts("\n");
-            return NULL;
-        }
-        
-        // if (debug_count <= 10) {
-        //     uart_puts("  PTE at ");
-        //     uart_puthex((uint64_t)pte);
-        //     uart_puts(" = ");
-        //     uart_puthex(*pte);
-        //     uart_puts("\n");
-        // }
-        
-        if (!(*pte & PTE_VALID)) {
-            /* Allocate new table */
-            uint64_t *new_table = vmm_alloc_page_table();
-            if (!new_table) {
-                uart_puts("VMM: Failed to allocate page table at level ");
-                uart_putc('0' + level);
-                uart_puts(" for vaddr ");
-                uart_puthex(vaddr);
-                uart_puts("\n");
-                return NULL;
-            }
-            
-            /* Set table descriptor */
-            uint64_t phys = pt_virt_to_phys(new_table);
-            *pte = phys | PTE_TYPE_TABLE | PTE_VALID;
-            
-            /* Ensure write is visible */
-            arch_mmu_barrier();
-        }
-        
-        /* Move to next level */
-        uint64_t next_table_phys = *pte & PTE_ADDR_MASK;
-        table = (uint64_t*)pt_phys_to_virt(next_table_phys);
-    }
-    
-    return vmm_get_pte(table, vaddr, target_level);
-}
-
 /* Initialize VMM subsystem */
 void vmm_init(void) {
-    // uart_puts("\nInitializing Virtual Memory Manager...\n");
+    uart_puts("VMM: Initializing...\n");
     
-    /* Get current TTBR1_EL1 value (kernel page table) */
-    uint64_t ttbr1 = arch_mmu_get_ttbr1();
+    /* Call architecture-specific initialization */
+    vmm_arch_ops.init();
     
-    /* Extract page table base (bits 47:12) */
-    uint64_t pt_phys = ttbr1 & 0x0000FFFFFFFFF000UL;
+    /* Get current page table base */
+    uint64_t pt_phys = vmm_arch_ops.get_pt_base();
     
-    /* Set up kernel context
-     * TTBR1 points to the L0 table, just like TTBR0
-     */
+    uart_puts("VMM: Got page table base: ");
+    uart_puthex(pt_phys);
+    uart_puts("\n");
+    
+    /* Set up kernel context - boot page tables use kernel virtual mapping */
     kernel_context.l0_table = (uint64_t*)PHYS_TO_VIRT(pt_phys);
     kernel_context.phys_base = pt_phys;
     kernel_context.is_kernel = true;
     
-    // uart_puts("VMM: Kernel page table (L0) at ");
-    // uart_puthex((uint64_t)kernel_context.l0_table);
-    // uart_puts(" (phys ");
-    // uart_puthex(pt_phys);
-    // uart_puts(")\n");
+    uart_puts("VMM: Kernel page table at ");
+    uart_puthex((uint64_t)kernel_context.l0_table);
+    uart_puts(" (phys ");
+    uart_puthex(pt_phys);
+    uart_puts(")\n");
     
     vmm_initialized = true;
+    uart_puts("VMM: Initialization complete\n");
 }
 
 /* Allocate a new page table from PMM */
 uint64_t* vmm_alloc_page_table(void) {
-    static int alloc_count = 0;
-    alloc_count++;
-    
-    // uart_puts("vmm_alloc_page_table #");
-    // uart_puthex(alloc_count);
-    // uart_puts(": calling pmm_alloc_page\n");
-    
     uint64_t phys = pmm_alloc_page();
     if (phys == 0) {
-        // uart_puts("  pmm_alloc_page returned 0!\n");
         return NULL;
     }
     
-    // uart_puts("  Got physical page at ");
-    // uart_puthex(phys);
-    // uart_puts("\n");
-    
     /* Convert to virtual address and clear */
-    uint64_t *table = (uint64_t*)pt_phys_to_virt(phys);
-    
-    // uart_puts("  Clearing page with memset...\n");
+    uint64_t *table = (uint64_t*)vmm_pt_phys_to_virt(phys);
     memset(table, 0, PAGE_SIZE);
     
-    // uart_puts("  Page table allocated successfully\n");
     return table;
 }
 
 /* Free a page table back to PMM */
 void vmm_free_page_table(uint64_t *table) {
-    uint64_t phys = pt_virt_to_phys(table);
+    uint64_t phys = vmm_pt_virt_to_phys(table);
     pmm_free_page(phys);
+}
+
+/* Architecture-independent walk/create helper */
+static uint64_t* vmm_walk_create_internal(vmm_context_t *ctx, uint64_t vaddr, int target_level) {
+    return vmm_arch_ops.walk_create((struct vmm_context *)ctx, vaddr, target_level, true);
 }
 
 /* Map a single page with given attributes */
 bool vmm_map_page(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr, uint64_t attrs) {
     if (!ctx || (vaddr & (PAGE_SIZE - 1)) || (paddr & (PAGE_SIZE - 1))) {
-        uart_puts("VMM: map_page invalid params - ctx=");
-        uart_puthex((uint64_t)ctx);
-        uart_puts(" vaddr=");
-        uart_puthex(vaddr);
-        uart_puts(" paddr=");
-        uart_puthex(paddr);
-        uart_puts("\n");
+        uart_puts("VMM: map_page invalid params\n");
         return false;
     }
     
-    /* Walk/create page tables to L3 */
-    uint64_t *pte = vmm_walk_create(ctx, vaddr, PT_LEVEL_3);
+    /* Walk/create page tables to leaf level */
+    uint64_t *pte = vmm_walk_create_internal(ctx, vaddr, ARCH_PT_LEAF_LEVEL);
     if (!pte) {
         return false;
     }
     
     /* Check if already mapped */
-    if (*pte & PTE_VALID) {
+    if (vmm_arch_ops.is_pte_valid(*pte)) {
         uart_puts("VMM: Warning - page already mapped at ");
         uart_puthex(vaddr);
         uart_puts("\n");
         return false;
     }
     
-    /* Create PTE */
-    *pte = paddr | vmm_attrs_to_pte(attrs) | PTE_TYPE_PAGE | PTE_VALID;
+    /* Create PTE using architecture-specific function */
+    *pte = vmm_arch_ops.make_block_pte(paddr, attrs, ARCH_PT_LEAF_LEVEL);
     
     /* Ensure write is visible before TLB invalidate */
-    arch_mmu_barrier();
+    vmm_arch_ops.barrier();
     
     /* Invalidate TLB for this address */
     vmm_flush_tlb_page(vaddr);
@@ -354,227 +162,95 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
                    size_t size, uint64_t attrs) {
     if (!ctx || (vaddr & (PAGE_SIZE - 1)) || (paddr & (PAGE_SIZE - 1)) || (size & (PAGE_SIZE - 1))) {
         uart_puts("VMM: Invalid parameters to map_range\n");
-        uart_puts("  vaddr=");
-        uart_puthex(vaddr);
-        uart_puts(" paddr=");
-        uart_puthex(paddr);
-        uart_puts(" size=");
-        uart_puthex(size);
-        uart_puts("\n");
         return false;
     }
     
     uint64_t end_vaddr = vaddr + size;
-    uint64_t pte_attrs = vmm_attrs_to_pte(attrs);
-    uint64_t mapped = 0;
     uint64_t pages_mapped = 0;
     
-    /* Cache for L3 table to avoid repeated walks */
-    uint64_t *cached_l3_table = NULL;
-    uint64_t cached_l3_base = 0;
-    
     while (vaddr < end_vaddr) {
-        // if ((pages_mapped % 8192) == 0 && pages_mapped > 0) {
-        //     uart_puts("  Mapped ");
-        //     uart_puthex(pages_mapped);
-        //     uart_puts(" pages (");
-        //     uart_puthex(pages_mapped * PAGE_SIZE);
-        //     uart_puts(" bytes) so far...\n");
-        // }
-        /* Try 2MB block mapping if aligned and size permits */
-        // if (pages_mapped == 0) {
-        //     uart_puts("  Block check: vaddr=");
-        //     uart_puthex(vaddr);
-        //     uart_puts(" paddr=");
-        //     uart_puthex(paddr);
-        //     uart_puts(" vaddr&~MASK=");
-        //     uart_puthex(vaddr & ~SECTION_MASK);
-        //     uart_puts(" paddr&~MASK=");
-        //     uart_puthex(paddr & ~SECTION_MASK);
-        //     uart_puts(" size=");
-        //     uart_puthex(end_vaddr - vaddr);
-        //     uart_puts("\n");
-        // }
-        if (!(vaddr & ~SECTION_MASK) && !(paddr & ~SECTION_MASK) && 
-            (end_vaddr - vaddr) >= SECTION_SIZE) {
+        /* Try to use largest possible block size for efficiency */
+        int best_level = ARCH_PT_LEAF_LEVEL;
+        size_t remaining = end_vaddr - vaddr;
+        
+        /* Check each level from largest to smallest */
+        for (int level = ARCH_PT_TOP_LEVEL; level <= ARCH_PT_LEAF_LEVEL; level++) {
+            size_t block_size = vmm_arch_ops.get_block_size(level);
+            if (block_size == 0) continue;
             
-            // if (pages_mapped == 0) {
-            //     uart_puts("VMM: Using 2MB blocks for mapping\n");
-            // }
-            
-            /* Walk/create to L2 */
-            uint64_t *pte = vmm_walk_create(ctx, vaddr, PT_LEVEL_2);
+            /* Check if addresses are aligned and enough space remains */
+            if (!(vaddr & (block_size - 1)) && 
+                !(paddr & (block_size - 1)) && 
+                remaining >= block_size) {
+                best_level = level;
+                break;
+            }
+        }
+        
+        /* Map at the best level */
+        size_t block_size = vmm_arch_ops.get_block_size(best_level);
+        
+        if (best_level == ARCH_PT_LEAF_LEVEL) {
+            /* Regular page mapping */
+            if (!vmm_map_page(ctx, vaddr, paddr, attrs)) {
+                uart_puts("VMM: Failed to map page at ");
+                uart_puthex(vaddr);
+                uart_puts("\n");
+                return false;
+            }
+        } else {
+            /* Block mapping */
+            uint64_t *pte = vmm_walk_create_internal(ctx, vaddr, best_level);
             if (!pte) {
-                uart_puts("VMM: Failed to walk/create to L2 for ");
+                uart_puts("VMM: Failed to get PTE for block at ");
                 uart_puthex(vaddr);
                 uart_puts("\n");
                 return false;
             }
             
             /* Check if already mapped */
-            if (*pte & PTE_VALID) {
-                uart_puts("VMM: Warning - 2MB block already mapped at ");
+            if (vmm_arch_ops.is_pte_valid(*pte)) {
+                uart_puts("VMM: Warning - block already mapped at ");
                 uart_puthex(vaddr);
                 uart_puts("\n");
                 return false;
             }
             
-            /* Create block descriptor */
-            *pte = paddr | pte_attrs | PTE_TYPE_BLOCK | PTE_VALID;
+            /* Create block PTE */
+            *pte = vmm_arch_ops.make_block_pte(paddr, attrs, best_level);
             
-            vaddr += SECTION_SIZE;
-            paddr += SECTION_SIZE;
-            mapped += SECTION_SIZE;
-            pages_mapped += (SECTION_SIZE / PAGE_SIZE);
-        } else {
-            /* Fall back to 4KB pages - optimize with L3 cache */
-            if (pages_mapped == 0) {
-                // uart_puts("VMM: Using 4KB pages for mapping\n");
-            }
-            uint64_t l3_base = vaddr & ~((1UL << 21) - 1);  /* L3 table covers 2MB */
-            
-            /* Check if we need a new L3 table */
-            if (!cached_l3_table || l3_base != cached_l3_base) {
-                /* Walk to L2 to get L3 table */
-                if (pages_mapped == 0) {
-                    // uart_puts("VMM: Walking to L2 for vaddr ");
-                    // uart_puthex(vaddr);
-                    // uart_puts("\n");
-                }
-                uint64_t *pte = vmm_walk_create(ctx, vaddr, PT_LEVEL_2);
-                if (!pte) {
-                    uart_puts("VMM: Failed to walk to L2 for ");
-                    uart_puthex(vaddr);
-                    uart_puts("\n");
-                    return false;
-                }
-                
-                /* Get or create L3 table */
-                if (!(*pte & PTE_VALID)) {
-                    static int l3_count = 0;
-                    l3_count++;
-                    // uart_puts("VMM: Allocating L3 table #");
-                    // uart_puthex(l3_count);
-                    // uart_puts(" for vaddr ");
-                    // uart_puthex(vaddr);
-                    // uart_puts("\n");
-                    
-                    uint64_t *new_table = vmm_alloc_page_table();
-                    if (!new_table) {
-                        uart_puts("VMM: Failed to allocate L3 table\n");
-                        return false;
-                    }
-                    uint64_t phys = pt_virt_to_phys(new_table);
-                    // uart_puts("  New L3 table at VA ");
-                    // uart_puthex((uint64_t)new_table);
-                    // uart_puts(" PA ");
-                    // uart_puthex(phys);
-                    // uart_puts("\n");
-                    *pte = phys | PTE_TYPE_TABLE | PTE_VALID;
-                    arch_mmu_barrier();
-                }
-                
-                // uart_puts("  About to cache L3 table, *pte=");
-                // uart_puthex(*pte);
-                // uart_puts("\n");
-                
-                /* Cache the L3 table */
-                uint64_t l3_phys = *pte & PTE_ADDR_MASK;
-                // uart_puts("  L3 phys addr: ");
-                // uart_puthex(l3_phys);
-                // uart_puts("\n");
-                
-                cached_l3_table = (uint64_t*)pt_phys_to_virt(l3_phys);
-                cached_l3_base = l3_base;
-                
-                // uart_puts("  Cached L3 table at VA ");
-                // uart_puthex((uint64_t)cached_l3_table);
-                // uart_puts("\n");
-            }
-            
-            /* Now map directly in cached L3 table */
-            // if (pages_mapped < 5) {
-            //     uart_puts("  Mapping page at vaddr ");
-            //     uart_puthex(vaddr);
-            //     uart_puts("\n");
-            // }
-            
-            int l3_idx = (vaddr >> 12) & 0x1FF;
-            // if (pages_mapped < 5) {
-            //     uart_puts("  L3 index: ");
-            //     uart_puthex(l3_idx);
-            //     uart_puts(" PTE addr: ");
-            //     uart_puthex((uint64_t)&cached_l3_table[l3_idx]);
-            //     uart_puts("\n");
-            // }
-            
-            uint64_t *pte = &cached_l3_table[l3_idx];
-            
-            if (*pte & PTE_VALID) {
-                uart_puts("VMM: Page already mapped at ");
-                uart_puthex(vaddr);
-                uart_puts("\n");
-                return false;
-            }
-            
-            *pte = paddr | pte_attrs | PTE_TYPE_PAGE | PTE_VALID;
-            
-            vaddr += PAGE_SIZE;
-            paddr += PAGE_SIZE;
-            mapped += PAGE_SIZE;
-            pages_mapped++;
+            /* Ensure write is visible */
+            vmm_arch_ops.barrier();
         }
+        
+        vaddr += block_size;
+        paddr += block_size;
+        pages_mapped += block_size / PAGE_SIZE;
     }
     
-    /* Ensure all writes are visible */
-    arch_mmu_barrier();
-    
-    // uart_puts("VMM: Successfully mapped ");
-    // uart_puthex(pages_mapped);
-    // uart_puts(" pages\n");
+    /* Flush TLB for entire range */
+    vmm_flush_tlb_all();
     
     return true;
 }
 
 /* Unmap a single page */
 bool vmm_unmap_page(vmm_context_t *ctx, uint64_t vaddr) {
-    if (!ctx || (vaddr & PAGE_MASK)) {
+    if (!ctx || (vaddr & (PAGE_SIZE - 1))) {
         return false;
     }
     
     /* Walk page tables without creating */
-    uint64_t *table = ctx->l0_table;
-    uint64_t *pte;
-    int start_level = PT_LEVEL_0;
-    
-    for (int level = start_level; level < PT_LEVEL_3; level++) {
-        pte = vmm_get_pte(table, vaddr, level);
-        
-        if (!(*pte & PTE_VALID)) {
-            return false;  /* Not mapped */
-        }
-        
-        if (*pte & PTE_TYPE_BLOCK) {
-            /* Found block mapping at this level */
-            *pte = 0;
-            vmm_flush_tlb_page(vaddr);
-            return true;
-        }
-        
-        table = (uint64_t*)pt_phys_to_virt(*pte & PTE_ADDR_MASK);
-    }
-    
-    /* Check L3 entry */
-    pte = vmm_get_pte(table, vaddr, PT_LEVEL_3);
-    if (!(*pte & PTE_VALID)) {
+    uint64_t *pte = vmm_arch_ops.walk_create((struct vmm_context *)ctx, vaddr, ARCH_PT_LEAF_LEVEL, false);
+    if (!pte || !vmm_arch_ops.is_pte_valid(*pte)) {
         return false;
     }
     
-    /* Clear mapping */
+    /* Clear PTE */
     *pte = 0;
     
-    /* Ensure write is visible before TLB invalidate */
-    arch_mmu_barrier();
+    /* Ensure write is visible */
+    vmm_arch_ops.barrier();
     
     /* Invalidate TLB */
     vmm_flush_tlb_page(vaddr);
@@ -584,112 +260,18 @@ bool vmm_unmap_page(vmm_context_t *ctx, uint64_t vaddr) {
 
 /* Unmap a range of pages */
 bool vmm_unmap_range(vmm_context_t *ctx, uint64_t vaddr, size_t size) {
-    if (!ctx || (vaddr & PAGE_MASK) || (size & PAGE_MASK)) {
+    if (!ctx || (vaddr & (PAGE_SIZE - 1)) || (size & (PAGE_SIZE - 1))) {
         return false;
     }
     
     uint64_t end_vaddr = vaddr + size;
     
     while (vaddr < end_vaddr) {
-        if (!vmm_unmap_page(ctx, vaddr)) {
-            return false;
-        }
+        vmm_unmap_page(ctx, vaddr);
         vaddr += PAGE_SIZE;
     }
     
     return true;
-}
-
-/* Create the DMAP region for all physical memory */
-void vmm_create_dmap(struct memory_info *mem_info) {
-    // uart_puts("\nCreating DMAP region...\n");
-    
-    if (!vmm_initialized) {
-        uart_puts("VMM: Error - VMM not initialized\n");
-        return;
-    }
-    
-    if (!mem_info) {
-        uart_puts("VMM: Error - No memory info provided for DMAP\n");
-        return;
-    }
-    
-    /* Cast to memory_info_t - defined in drivers/fdt.h */
-    typedef struct {
-        struct { uint64_t base; uint64_t size; } regions[8];
-        int count;
-        uint64_t total_size;
-    } memory_info_t;
-    memory_info_t *info = (memory_info_t *)mem_info;
-    
-    /* Set global DMAP bounds based on first region */
-    dmap_phys_base = info->regions[0].base;
-    dmap_phys_max = info->regions[0].base;
-    
-    /* Find the maximum physical address across all regions */
-    for (int i = 0; i < info->count; i++) {
-        uint64_t region_end = info->regions[i].base + info->regions[i].size;
-        if (region_end > dmap_phys_max) {
-            dmap_phys_max = region_end;
-        }
-    }
-    
-    /* Map each memory region to DMAP */
-    for (int i = 0; i < info->count; i++) {
-        uint64_t phys_start = info->regions[i].base;
-        uint64_t size = info->regions[i].size;
-        
-        /* Calculate DMAP virtual address using dynamic base */
-        /* DMAP formula: va = DMAP_BASE + (pa - lowest_phys_base) */
-        uint64_t offset = phys_start - info->regions[0].base;
-        uint64_t dmap_va = DMAP_BASE + offset;
-        
-        // uart_puts("VMM: Mapping RAM region ");
-        // uart_puthex(phys_start);
-        // uart_puts(" - ");
-        // uart_puthex(phys_start + size);
-        // uart_puts(" to DMAP at ");
-        // uart_puthex(dmap_va);
-        // uart_puts("\n");
-        
-        if (!vmm_map_range(&kernel_context, dmap_va, phys_start, size, 
-                           VMM_ATTR_RW)) {
-            uart_puts("VMM: Failed to create DMAP for region ");
-            uart_puthex(i);
-            uart_puts("!\n");
-            return;
-        }
-    }
-    
-    /* Flush entire TLB to ensure mappings are active */
-    vmm_flush_tlb_all();
-    
-    /* Test DMAP accessibility using first region */
-    uint64_t test_dmap_va = DMAP_BASE;
-    volatile uint64_t *test_addr = (volatile uint64_t *)test_dmap_va;
-    
-    // uart_puts("VMM: Testing DMAP accessibility...\n");
-    uint64_t test_val = *test_addr;
-    *test_addr = 0xDEADBEEF12345678ULL;
-    test_val = *test_addr;
-    if (test_val != 0xDEADBEEF12345678ULL) {
-        uart_puts("VMM: DMAP test failed! Read ");
-        uart_puthex(test_val);
-        uart_puts("\n");
-        return;
-    }
-    
-    /* Mark DMAP as ready */
-    dmap_ready = true;
-    
-    // uart_puts("VMM: DMAP created successfully for ");
-    // uart_puthex(info->count);
-    // uart_puts(" memory regions\n");
-}
-
-/* Get current kernel page table context */
-vmm_context_t* vmm_get_kernel_context(void) {
-    return &kernel_context;
 }
 
 /* Walk page tables and return physical address for a virtual address */
@@ -698,83 +280,154 @@ uint64_t vmm_virt_to_phys(vmm_context_t *ctx, uint64_t vaddr) {
         return 0;
     }
     
-    uint64_t *table = ctx->l0_table;
-    uint64_t *pte;
-    int start_level = PT_LEVEL_0;
-    
-    for (int level = start_level; level <= PT_LEVEL_3; level++) {
-        pte = vmm_get_pte(table, vaddr, level);
-        
-        if (!(*pte & PTE_VALID)) {
-            return 0;  /* Not mapped */
-        }
-        
-        if (level == PT_LEVEL_3 || (*pte & PTE_TYPE_BLOCK)) {
-            /* Found mapping */
-            uint64_t mask = (level == PT_LEVEL_3) ? PAGE_MASK : 
-                           (level == PT_LEVEL_2) ? SECTION_MASK : 0x3FFFFFFF;
-            return (*pte & PTE_ADDR_MASK) | (vaddr & ~mask);
-        }
-        
-        table = (uint64_t*)pt_phys_to_virt(*pte & PTE_ADDR_MASK);
+    /* Walk to leaf level */
+    uint64_t *pte = vmm_arch_ops.walk_create((struct vmm_context *)ctx, vaddr, ARCH_PT_LEAF_LEVEL, false);
+    if (!pte || !vmm_arch_ops.is_pte_valid(*pte)) {
+        return 0;
     }
     
-    return 0;
+    /* Extract physical address and add page offset */
+    uint64_t phys = vmm_arch_ops.pte_to_phys(*pte);
+    return phys | (vaddr & (PAGE_SIZE - 1));
 }
 
 /* Check if a virtual address is mapped */
 bool vmm_is_mapped(vmm_context_t *ctx, uint64_t vaddr) {
-    return vmm_virt_to_phys(ctx, vaddr) != 0;
+    if (!ctx) {
+        return false;
+    }
+    
+    uint64_t *pte = vmm_arch_ops.walk_create((struct vmm_context *)ctx, vaddr, ARCH_PT_LEAF_LEVEL, false);
+    return pte && vmm_arch_ops.is_pte_valid(*pte);
 }
 
 /* Flush TLB for a specific address */
 void vmm_flush_tlb_page(uint64_t vaddr) {
-    arch_mmu_invalidate_page(vaddr);
+    vmm_arch_ops.flush_tlb_page(vaddr);
 }
 
 /* Flush entire TLB */
 void vmm_flush_tlb_all(void) {
-    arch_mmu_flush_all();
+    vmm_arch_ops.flush_tlb_all();
 }
 
-/* Debug: print page table entries for an address */
-void vmm_debug_walk(vmm_context_t *ctx, uint64_t vaddr) {
-    if (!ctx) {
-        return;
-    }
-    
-    uart_puts("\nPage table walk for ");
-    uart_puthex(vaddr);
-    uart_puts(":\n");
-    
-    uint64_t *table = ctx->l0_table;
-    uint64_t *pte;
-    int start_level = PT_LEVEL_0;
-    
-    for (int level = start_level; level <= PT_LEVEL_3; level++) {
-        pte = vmm_get_pte(table, vaddr, level);
-        
-        uart_puts("  L");
-        uart_putc('0' + level);
-        uart_puts(" entry: ");
-        uart_puthex(*pte);
-        
-        if (!(*pte & PTE_VALID)) {
-            uart_puts(" (invalid)\n");
-            break;
-        }
-        
-        if (level == PT_LEVEL_3 || (*pte & PTE_TYPE_BLOCK)) {
-            uart_puts(" (mapped)\n");
-            break;
-        }
-        
-        uart_puts(" (table)\n");
-        table = (uint64_t*)pt_phys_to_virt(*pte & PTE_ADDR_MASK);
-    }
+/* Get current kernel page table context */
+vmm_context_t* vmm_get_kernel_context(void) {
+    return &kernel_context;
 }
 
 /* Check if DMAP is ready for use */
 bool vmm_is_dmap_ready(void) {
     return dmap_ready;
+}
+
+/* Create the DMAP region for all physical memory */
+void vmm_create_dmap(memory_info_t *mem_info) {
+    if (!vmm_initialized) {
+        uart_puts("VMM: Cannot create DMAP - VMM not initialized\n");
+        return;
+    }
+    
+    uart_puts("VMM: Creating DMAP region...\n");
+    
+    if (mem_info->count == 0) {
+        uart_puts("VMM: No memory regions found\n");
+        return;
+    }
+    
+    /* Find the lowest and highest physical addresses across all regions */
+    uint64_t lowest_base = UINT64_MAX;
+    uint64_t highest_end = 0;
+    
+    for (int i = 0; i < mem_info->count; i++) {
+        uint64_t region_base = mem_info->regions[i].base;
+        uint64_t region_end = region_base + mem_info->regions[i].size;
+        
+        if (region_base < lowest_base) {
+            lowest_base = region_base;
+        }
+        if (region_end > highest_end) {
+            highest_end = region_end;
+        }
+    }
+    
+    dmap_phys_base = lowest_base;
+    dmap_phys_max = highest_end;
+    
+    uart_puts("  Physical memory range: ");
+    uart_puthex(dmap_phys_base);
+    uart_puts(" - ");
+    uart_puthex(dmap_phys_max);
+    uart_puts("\n");
+    
+    /* Map each memory region to DMAP */
+    for (int i = 0; i < mem_info->count; i++) {
+        uint64_t paddr = mem_info->regions[i].base;
+        size_t size = mem_info->regions[i].size;
+        uint64_t vaddr = DMAP_BASE + (paddr - dmap_phys_base);
+        
+        uart_puts("  Mapping region ");
+        uart_putc('0' + i);
+        uart_puts(": PA ");
+        uart_puthex(paddr);
+        uart_puts(" -> VA ");
+        uart_puthex(vaddr);
+        uart_puts(" (");
+        uart_puthex(size);
+        uart_puts(" bytes)\n");
+        
+        /* Map with normal memory attributes */
+        if (!vmm_map_range(&kernel_context, vaddr, paddr, size, 
+                           VMM_ATTR_READ | VMM_ATTR_WRITE)) {
+            uart_puts("VMM: Failed to create DMAP mappings for region ");
+            uart_putc('0' + i);
+            uart_puts("\n");
+            return;
+        }
+    }
+    
+    dmap_ready = true;
+    uart_puts("VMM: DMAP created successfully\n");
+}
+
+/* Debug: print page table entries for an address */
+void vmm_debug_walk(vmm_context_t *ctx, uint64_t vaddr) {
+    if (!ctx) {
+        uart_puts("VMM: Invalid context for debug walk\n");
+        return;
+    }
+    
+    uart_puts("VMM: Page table walk for VA ");
+    uart_puthex(vaddr);
+    uart_puts("\n");
+    
+    uint64_t *table = ctx->l0_table;
+    
+    for (int level = ARCH_PT_TOP_LEVEL; level <= ARCH_PT_LEAF_LEVEL; level++) {
+        uint64_t idx = vmm_arch_ops.get_pt_index(vaddr, level);
+        uint64_t *pte = vmm_arch_ops.get_pte(table, vaddr, level);
+        
+        uart_puts("  L");
+        uart_putc('0' + level);
+        uart_puts("[");
+        uart_puthex(idx);
+        uart_puts("] @ ");
+        uart_puthex((uint64_t)pte);
+        uart_puts(" = ");
+        uart_puthex(*pte);
+        
+        if (!vmm_arch_ops.is_pte_valid(*pte)) {
+            uart_puts(" (invalid)\n");
+            break;
+        }
+        
+        if (vmm_arch_ops.is_pte_table(*pte)) {
+            uart_puts(" (table)\n");
+            uint64_t next_phys = vmm_arch_ops.pte_to_phys(*pte);
+            table = (uint64_t*)vmm_pt_phys_to_virt(next_phys);
+        } else {
+            uart_puts(" (block/page)\n");
+            break;
+        }
+    }
 }

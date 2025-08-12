@@ -79,7 +79,12 @@ void uart_init(void) {
     if (va) {
         uart_base = va;
         uart_compatible = platform->console_uart_compatible;  // May be NULL
-        // Debug output removed - uart_base not yet set
+        
+        // For RISC-V, try a simple test write to see if the mapping works
+#ifdef __riscv
+        // Don't actually access the UART yet, just store the address
+        // The actual access will happen in uart_putc
+#endif
         return;
     }
     
@@ -94,10 +99,14 @@ void uart_putc(char c) {
     }
     
     // Determine UART type and use appropriate registers
-    if (uart_compatible && 
-        (uart_compat_contains(uart_compatible, "ns16550") ||
-         uart_compat_contains(uart_compatible, "16550") ||
-         uart_compat_contains(uart_compatible, "8250"))) {
+    if ((uart_compatible && 
+         (uart_compat_contains(uart_compatible, "ns16550") ||
+          uart_compat_contains(uart_compatible, "16550") ||
+          uart_compat_contains(uart_compatible, "8250")))
+#ifdef __riscv
+        || !uart_compatible  // For RISC-V, default to NS16550 if no compatible string
+#endif
+        ) {
         // NS16550-compatible UART (common for x86, RISC-V, some ARM)
         volatile uint8_t *uart = (volatile uint8_t *)uart_base;
         

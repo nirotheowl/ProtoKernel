@@ -16,7 +16,7 @@ echo "Press Ctrl-A X to exit QEMU"
 
 qemu-system-riscv64 \
     -M virt \
-    -bios none \
+    -bios default \
     -m 1G \
     -nographic \
     -kernel "$KERNEL_BIN"

@@ -99,10 +99,13 @@ bool fdt_get_memory(void *fdt, memory_info_t *mem_info) {
             const char *name = (const char *)p;
             int len = strlen(name) + 1;
             
-            /* Check if this is a memory node */
-            if (depth == 1 && (fdt_strcmp(name, "memory") == 0 || 
-                              fdt_strcmp(name, "memory@40000000") == 0)) {
-                in_memory_node = true;
+            /* Check if this is a memory node - be more flexible with matching */
+            if (depth == 1) {
+                /* Check if node name starts with "memory" */
+                if (name[0] == 'm' && name[1] == 'e' && name[2] == 'm' && 
+                    name[3] == 'o' && name[4] == 'r' && name[5] == 'y') {
+                    in_memory_node = true;
+                }
             }
             
             /* Skip name (aligned to 4 bytes) */
@@ -126,7 +129,7 @@ bool fdt_get_memory(void *fdt, memory_info_t *mem_info) {
             void *propval = (uint8_t *)p + sizeof(fdt_prop_t);
             
             /* Look for "reg" property in memory node */
-            if (in_memory_node && fdt_strcmp(propname, "reg") == 0) {
+            if (in_memory_node && propname && fdt_strcmp(propname, "reg") == 0) {
                 /* Parse memory regions (pairs of base, size) */
                 uint64_t *cells = (uint64_t *)propval;
                 int num_regions = len / (2 * sizeof(uint64_t));

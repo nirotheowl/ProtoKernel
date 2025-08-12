@@ -46,4 +46,8 @@
 // Virtual address bits
 #define ARCH_VA_BITS             48
 
+// Kernel pre-mapped region size (set up by boot.S)
+// boot.S maps 128MB (64 * 2MB blocks) for the kernel
+#define ARCH_KERNEL_PREMAPPED_SIZE  0x8000000ULL  /* 128MB */
+
 #endif // _ARM64_ARCH_VMPARAM_H_

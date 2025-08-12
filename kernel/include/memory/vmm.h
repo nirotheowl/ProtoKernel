@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <drivers/fdt.h>
 
 // Page sizes and constants from paging.h
 #define PAGE_SHIFT              12
@@ -95,8 +96,7 @@ bool vmm_unmap_page(vmm_context_t *ctx, uint64_t vaddr);
 bool vmm_unmap_range(vmm_context_t *ctx, uint64_t vaddr, size_t size);
 
 /* Create the DMAP region for all physical memory */
-struct memory_info;  /* Forward declaration */
-void vmm_create_dmap(struct memory_info *mem_info);
+void vmm_create_dmap(memory_info_t *mem_info);
 
 /* Get current kernel page table context */
 vmm_context_t* vmm_get_kernel_context(void);
@@ -118,5 +118,9 @@ void vmm_debug_walk(vmm_context_t *ctx, uint64_t vaddr);
 
 /* Check if DMAP is ready for use */
 bool vmm_is_dmap_ready(void);
+
+/* Helper functions for page table address conversion */
+void* vmm_pt_phys_to_virt(uint64_t phys);
+uint64_t vmm_pt_virt_to_phys(void *virt);
 
 #endif /* _VMM_H_ */

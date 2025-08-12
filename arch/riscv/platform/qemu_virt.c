@@ -46,7 +46,7 @@ const platform_desc_t qemu_virt_platform = {
     .detect = qemu_virt_detect,
     .devmap = &qemu_virt_platform_devmap,
     .console_uart_phys = 0x10000000,
-    .console_uart_compatible = "ns16550a"
+    .console_uart_compatible = NULL  // Let RISC-V default to NS16550
 };
 
 // Stub for odroid - not supported on RISC-V

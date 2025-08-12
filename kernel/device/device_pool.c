@@ -75,20 +75,24 @@ bool device_pool_init(void) {
         return false;
     }
     
-    /* Map to kernel virtual space */
-    pmm_pool.base = (void *)(KERNEL_VIRT_BASE + 0x1000000);  /* 16MB after kernel */
     pmm_pool.size = pool_pages * PAGE_SIZE;
     pmm_pool.phys_addr = phys_addr;
     
-    if (!vmm_map_range(vmm_get_kernel_context(), 
-                       (uint64_t)pmm_pool.base, 
-                       phys_addr, 
-                       pmm_pool.size,
-                       VMM_ATTR_READ | VMM_ATTR_WRITE)) {
-        uart_puts("DEVICE_POOL: Failed to map PMM pool\n");
+    /* Use DMAP to access the pool memory */
+    /* Since we allocated from PMM, this memory is regular RAM and should be in DMAP */
+    pmm_pool.base = (void *)PHYS_TO_DMAP(phys_addr);
+    
+    if (!pmm_pool.base) {
+        uart_puts("DEVICE_POOL: Failed to get DMAP address for pool\n");
         pmm_free_pages(phys_addr, pool_pages);
         return false;
     }
+    
+    uart_puts("DEVICE_POOL: Allocated pool at PA ");
+    uart_puthex(phys_addr);
+    uart_puts(", accessible via DMAP at VA ");
+    uart_puthex((uint64_t)pmm_pool.base);
+    uart_puts("\n");
     
     /* Initialize pool header at the beginning of the allocated space */
     header = (pool_header_t *)pmm_pool.base;

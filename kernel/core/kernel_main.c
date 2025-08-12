@@ -67,7 +67,7 @@ void kernel_main(void* dtb) {
     
     // Create DMAP region for all physical memory
     // This must be done before device mappings so PMM can use DMAP for page clearing
-    vmm_create_dmap((struct memory_info *)&mem_info);
+    vmm_create_dmap(&mem_info);
     
     // Map FDT to permanent virtual address
     if (!fdt_mgr_map_virtual()) {

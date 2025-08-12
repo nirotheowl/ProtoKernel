@@ -10,6 +10,7 @@
 #include <memory/pmm.h>
 #include <memory/vmm.h>
 #include <memory/vmparam.h>
+#include <arch_vmparam.h>
 #include <uart.h>
 #include <string.h>
 
@@ -124,7 +125,33 @@ bool fdt_mgr_map_virtual(void) {
         return true;  /* Already mapped */
     }
     
-    /* Calculate page-aligned range */
+    /* Check if FDT is in the kernel's pre-mapped region */
+    uint64_t fdt_phys = (uint64_t)fdt_state.phys_addr;
+    extern uint64_t kernel_phys_base;
+    
+    /* If FDT is within the kernel's pre-mapped region, use existing mapping */
+    if (fdt_phys >= kernel_phys_base && 
+        fdt_phys < (kernel_phys_base + ARCH_KERNEL_PREMAPPED_SIZE)) {
+        /* Use kernel virtual mapping */
+        fdt_state.virt_addr = (void *)PHYS_TO_VIRT(fdt_phys);
+        fdt_state.is_mapped = true;
+        
+        uart_puts("FDT_MGR: FDT already accessible at VA ");
+        uart_puthex((uint64_t)fdt_state.virt_addr);
+        uart_puts(" (using kernel pre-mapped region)\n");
+        
+        /* Validate the mapping by checking magic number */
+        fdt_header_t *header = (fdt_header_t *)fdt_state.virt_addr;
+        if (fdt32_to_cpu(header->magic) != FDT_MAGIC) {
+            uart_puts("FDT_MGR: FDT validation failed\n");
+            fdt_state.is_mapped = false;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /* Calculate page-aligned range for new mapping */
     uint64_t phys_start = (uint64_t)fdt_state.phys_addr & ~(PAGE_SIZE - 1);
     uint64_t offset = (uint64_t)fdt_state.phys_addr - phys_start;
     uint64_t map_size = ((fdt_state.size + offset + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
