@@ -9,13 +9,6 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Default architecture
 DEFAULT_ARCH="arm64"
 
-# Build the kernel for a specific architecture
-build() {
-    local arch=${1:-$DEFAULT_ARCH}
-    echo "Building kernel for $arch..."
-    make ARCH=$arch
-}
-
 build_arm64() {
     build arm64
 }
@@ -68,27 +61,6 @@ run_debug_riscv() {
     ./scripts/run-debug-riscv.sh
 }
 
-# Legacy compatibility aliases (will print deprecation warning)
-run_emu() {
-    echo "Warning: run_emu is deprecated. Use run_emu_arm64 or run_emu_riscv instead."
-    run_emu_arm64
-}
-
-run_display() {
-    echo "Warning: run_display is deprecated. Use run_display_arm64 or run_display_riscv instead."
-    run_display_arm64
-}
-
-run_debug() {
-    echo "Warning: run_debug is deprecated. Use run_debug_arm64 or run_debug_riscv instead."
-    run_debug_arm64
-}
-
-run_uboot() {
-    echo "Warning: run_uboot is deprecated. Use run_uboot_arm64 instead."
-    run_uboot_arm64
-}
-
 # Clean build artifacts
 clean() {
     local arch=${1:-""}
@@ -135,7 +107,5 @@ kernel_help() {
     echo "  clean_arm64      - Clean ARM64 build artifacts"
     echo "  clean_riscv      - Clean RISC-V build artifacts"
     echo ""
-    echo "Legacy commands (deprecated):"
-    echo "  run_emu, run_display, run_debug, run_uboot"
 }
 

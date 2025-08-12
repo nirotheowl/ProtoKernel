@@ -107,10 +107,14 @@ void kernel_main(void* dtb) {
     }
     uart_puts(")\n");
     
-    uart_puts("\nCurrent Exception Level: ");
+#ifdef __riscv
+    uart_puts("\nCurrent Privilege Mode: S-mode (Supervisor)\n");
+#elif defined(__aarch64__)
+    uart_puts("\nCurrent Exception Level: EL");
     int level = arch_get_exception_level();
     uart_putc('0' + level);
     uart_puts("\n");
+#endif
        
     uart_puts("\nSystem Information:\n");
     
@@ -128,10 +132,6 @@ void kernel_main(void* dtb) {
     
     // Report FDT manager state
     fdt_mgr_print_info();
-    
-    // Debug: Check what's in the page tables
-    vmm_debug_walk(vmm_get_kernel_context(), 0xFFFF000040200000UL);  // Kernel address
-    vmm_debug_walk(vmm_get_kernel_context(), 0xFFFFA00000000000UL);  // DMAP start
     
     // Print device mappings
     devmap_print_mappings();

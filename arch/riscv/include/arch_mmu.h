@@ -9,9 +9,10 @@
 
 #include <stdint.h>
 
-// RISC-V MMU operations - minimal stubs for now
+// RISC-V MMU operations
 static inline void arch_mmu_barrier(void) {
-    __asm__ volatile("sfence.vma" ::: "memory");
+    // Memory fence for read-write ordering, NOT a TLB flush
+    __asm__ volatile("fence rw,rw" ::: "memory");
 }
 
 static inline uint64_t arch_mmu_get_ttbr1(void) {

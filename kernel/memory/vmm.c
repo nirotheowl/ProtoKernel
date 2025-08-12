@@ -173,17 +173,37 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
         int best_level = ARCH_PT_LEAF_LEVEL;
         size_t remaining = end_vaddr - vaddr;
         
-        /* Check each level from largest to smallest */
-        for (int level = ARCH_PT_TOP_LEVEL; level <= ARCH_PT_LEAF_LEVEL; level++) {
-            size_t block_size = vmm_arch_ops.get_block_size(level);
-            if (block_size == 0) continue;
-            
-            /* Check if addresses are aligned and enough space remains */
-            if (!(vaddr & (block_size - 1)) && 
-                !(paddr & (block_size - 1)) && 
-                remaining >= block_size) {
-                best_level = level;
-                break;
+        /* Check each level from largest to smallest 
+         * Note: On RISC-V, levels go 2->1->0 (large to small)
+         *       On ARM64, levels go 0->1->2->3 (small to large)
+         * We need to iterate in the correct direction for each arch */
+        if (ARCH_PT_TOP_LEVEL > ARCH_PT_LEAF_LEVEL) {
+            /* RISC-V style: top > leaf, iterate downward */
+            for (int level = ARCH_PT_TOP_LEVEL; level >= ARCH_PT_LEAF_LEVEL; level--) {
+                size_t block_size = vmm_arch_ops.get_block_size(level);
+                if (block_size == 0) continue;
+                
+                /* Check if addresses are aligned and enough space remains */
+                if (!(vaddr & (block_size - 1)) && 
+                    !(paddr & (block_size - 1)) && 
+                    remaining >= block_size) {
+                    best_level = level;
+                    break;
+                }
+            }
+        } else {
+            /* ARM64 style: top < leaf, iterate upward */
+            for (int level = ARCH_PT_TOP_LEVEL; level <= ARCH_PT_LEAF_LEVEL; level++) {
+                size_t block_size = vmm_arch_ops.get_block_size(level);
+                if (block_size == 0) continue;
+                
+                /* Check if addresses are aligned and enough space remains */
+                if (!(vaddr & (block_size - 1)) && 
+                    !(paddr & (block_size - 1)) && 
+                    remaining >= block_size) {
+                    best_level = level;
+                    break;
+                }
             }
         }
         
@@ -218,15 +238,15 @@ bool vmm_map_range(vmm_context_t *ctx, uint64_t vaddr, uint64_t paddr,
             
             /* Create block PTE */
             *pte = vmm_arch_ops.make_block_pte(paddr, attrs, best_level);
-            
-            /* Ensure write is visible */
-            vmm_arch_ops.barrier();
         }
         
         vaddr += block_size;
         paddr += block_size;
         pages_mapped += block_size / PAGE_SIZE;
     }
+    
+    /* Ensure all writes are visible before TLB flush */
+    vmm_arch_ops.barrier();
     
     /* Flush TLB for entire range */
     vmm_flush_tlb_all();
