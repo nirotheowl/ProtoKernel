@@ -410,7 +410,9 @@ el1_entry:
      * - TBI0: Top byte ignored for tagging */
     mov x0, #16                           /* T0SZ = 16 */
     orr x0, x0, #(16 << 16)               /* T1SZ = 16 */
-    orr x0, x0, #(0x2 << 32)              /* IPS = 2 (40-bit physical addresses) */
+    mov x1, #0x5                          /* IPS = 5 (48-bit physical addresses) */
+    lsl x1, x1, #32                       /* Shift to correct position */
+    orr x0, x0, x1                        /* Set IPS field */
     orr x0, x0, #(0x3 << 12)              /* SH0 = Inner shareable */
     orr x0, x0, #(0x3 << 28)              /* SH1 = Inner shareable */
     orr x0, x0, #(0x1 << 10)              /* ORGN0 = WBWA */
