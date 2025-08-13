@@ -22,9 +22,4 @@ void uart_list_devices(void);
 /* Console selection */
 int uart_console_auto_select(void *fdt);
 
-/* Driver initialization functions */
-void ns16550_driver_init(void);
-void pl011_driver_init(void);
-void sifive_driver_init(void);
-
 #endif /* __UART_DRIVERS_H */

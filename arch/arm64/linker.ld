@@ -25,6 +25,11 @@ SECTIONS
     . = ALIGN(4096);
     .rodata : AT(ADDR(.rodata) - VIRT_TO_PHYS_OFFSET) {
         *(.rodata .rodata.*)
+        
+        . = ALIGN(8);
+        __uart_drivers_start = .;
+        KEEP(*(.uart_drivers))
+        __uart_drivers_end = .;
     }
 
     . = ALIGN(4096);

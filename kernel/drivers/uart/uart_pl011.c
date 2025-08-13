@@ -8,6 +8,7 @@
 #include <drivers/driver.h>
 #include <drivers/driver_class.h>
 #include <drivers/uart_drivers.h>
+#include <drivers/driver_registry.h>
 #include <device/device.h>
 #include <device/resource.h>
 #include <uart.h>
@@ -457,7 +458,7 @@ static struct driver pl011_driver = {
 };
 
 // Driver initialization function
-void pl011_driver_init(void) {
+static void pl011_driver_init(void) {
     int ret;
     
     uart_puts("PL011: Registering driver\n");
@@ -469,3 +470,5 @@ void pl011_driver_init(void) {
         uart_puts("PL011: Failed to register driver\n");
     }
 }
+
+UART_DRIVER_REGISTER(pl011_driver_init, DRIVER_PRIO_NORMAL);

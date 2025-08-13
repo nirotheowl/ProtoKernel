@@ -8,6 +8,7 @@
 #include <drivers/driver.h>
 #include <drivers/driver_class.h>
 #include <drivers/uart_drivers.h>
+#include <drivers/driver_registry.h>
 #include <device/device.h>
 #include <device/resource.h>
 #include <uart.h>
@@ -367,7 +368,7 @@ static struct driver sifive_driver = {
 };
 
 // Driver initialization function
-void sifive_driver_init(void) {
+static void sifive_driver_init(void) {
     int ret;
     
     uart_puts("SiFive: Registering driver\n");
@@ -379,3 +380,5 @@ void sifive_driver_init(void) {
         uart_puts("SiFive: Failed to register driver\n");
     }
 }
+
+UART_DRIVER_REGISTER(sifive_driver_init, DRIVER_PRIO_NORMAL);

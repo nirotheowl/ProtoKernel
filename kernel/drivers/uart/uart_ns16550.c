@@ -8,6 +8,7 @@
 #include <drivers/driver.h>
 #include <drivers/driver_class.h>
 #include <drivers/uart_drivers.h>
+#include <drivers/driver_registry.h>
 #include <device/device.h>
 #include <device/resource.h>
 #include <uart.h>
@@ -457,7 +458,7 @@ static struct driver ns16550_driver = {
 };
 
 // Driver initialization function
-void ns16550_driver_init(void) {
+static void ns16550_driver_init(void) {
     int ret;
     
     uart_puts("NS16550: Registering driver\n");
@@ -469,3 +470,6 @@ void ns16550_driver_init(void) {
         uart_puts("NS16550: Failed to register driver\n");
     }
 }
+
+// Driver registration
+UART_DRIVER_REGISTER(ns16550_driver_init, DRIVER_PRIO_NORMAL);

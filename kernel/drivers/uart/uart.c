@@ -7,6 +7,7 @@
 #include <uart.h>
 #include <drivers/driver.h>
 #include <drivers/uart_drivers.h>
+#include <drivers/driver_registry.h>
 #include <device/device.h>
 #include <string.h>
 
@@ -17,10 +18,8 @@ void uart_init(void) {
     // Initialize UART framework
     uart_framework_init();
     
-    // Register all UART drivers
-    ns16550_driver_init();
-    pl011_driver_init();
-    sifive_driver_init();
+    // Automatically register all UART drivers from linker section
+    driver_registry_init_uart();
 }
 
 void uart_putc(char c) {
