@@ -46,16 +46,7 @@ static bool devmap_initialized = false;
 static const platform_desc_t *current_platform = NULL;
 
 // Forward declarations
-extern const platform_desc_t qemu_virt_platform;
-extern const platform_desc_t odroid_m2_platform;
 static int devmap_map_device_tree(struct device *dev);
-
-// Platform list - add new platforms here
-static const platform_desc_t *platforms[] = {
-    &qemu_virt_platform,
-    &odroid_m2_platform,
-    NULL
-};
 
 // Initialize device mapping system
 void devmap_init(void)
@@ -108,28 +99,10 @@ void devmap_init(void)
     uart_puthex(table_size);
     uart_puts(" bytes) for device table\n");
 
-    // Detect current platform (still useful for platform-specific behavior)
-    for (int i = 0; platforms[i] != NULL; i++) {
-        if (platforms[i]->detect && platforms[i]->detect()) {
-            current_platform = platforms[i];
-            break;
-        }
-    }
-
-    // No default platform - must be explicitly detected
-    if (!current_platform) {
-#ifdef __riscv
-        // For RISC-V, default to QEMU virt if no platform detected
-        current_platform = &qemu_virt_platform;
-        uart_puts("DEVMAP: Using default RISC-V QEMU virt platform\n");
-#else
-        uart_puts("DEVMAP: WARNING: No platform detected\n");
-#endif
-    } else {
-        uart_puts("DEVMAP: Detected platform: ");
-        uart_puts(current_platform->name);
-        uart_puts("\n");
-    }
+    // Platform detection is now handled by the driver system
+    // All device information comes from the device tree
+    uart_puts("DEVMAP: Using device tree for all device information\n");
+    current_platform = NULL;  // No longer using platform system
 
     // Map all devices discovered from the device tree
     // This is the ONLY place we map devices - no duplication
@@ -456,13 +429,19 @@ static int devmap_map_device_tree(struct device *dev)
 {
     struct device *child;
     int count = 0;
+    static struct device *cached_root = NULL;
     
     if (!dev) {
         return 0;
     }
     
+    /* Cache the root device to avoid repeated calls */
+    if (!cached_root) {
+        cached_root = device_get_root();
+    }
+    
     /* Skip the root device itself */
-    if (dev != device_get_root()) {
+    if (dev != cached_root) {
         /* Map this device's resources */
         int mapped = devmap_map_device_resources(dev);
         if (mapped > 0) {

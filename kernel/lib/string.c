@@ -122,6 +122,26 @@ char* strstr(const char* haystack, const char* needle) {
     return NULL;
 }
 
+char* strchr(const char* s, int c) {
+    if (!s) {
+        return NULL;
+    }
+    
+    while (*s) {
+        if (*s == (char)c) {
+            return (char*)s;
+        }
+        s++;
+    }
+    
+    // Check for null terminator if c is 0
+    if (c == 0) {
+        return (char*)s;
+    }
+    
+    return NULL;
+}
+
 /* Simple number to string conversion helper */
 int num_to_str(char *buf, size_t size, unsigned long num) {
     char temp[32];

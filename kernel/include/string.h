@@ -21,6 +21,7 @@ char* strncpy(char* dest, const char* src, size_t n);
 int strcmp(const char* s1, const char* s2);
 int strncmp(const char* s1, const char* s2, size_t n);
 char* strstr(const char* haystack, const char* needle);
+char* strchr(const char* s, int c);
 
 // Utility functions
 int num_to_str(char *buf, size_t size, unsigned long num);

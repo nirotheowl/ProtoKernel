@@ -14,6 +14,9 @@
 extern struct device *device_pool_alloc_device(void);
 extern char *device_pool_strdup(const char *str);
 
+/* Forward declaration for driver system */
+struct driver;
+
 /* Device registry structure */
 typedef struct {
     struct device   *devices;       /* Head of global device list */
@@ -430,6 +433,16 @@ void *device_get_driver_data(struct device *dev) {
     return dev ? dev->driver_data : NULL;
 }
 
+const char *device_get_compatible(struct device *dev) {
+    return dev ? dev->compatible : NULL;
+}
+
+void device_set_compatible(struct device *dev, const char *compatible) {
+    if (dev) {
+        dev->compatible = compatible;
+    }
+}
+
 /* Device state management */
 bool device_activate(struct device *dev) {
     if (!dev) {
@@ -499,6 +512,29 @@ device_type_t device_string_to_type(const char *str) {
     }
     
     return DEV_TYPE_UNKNOWN;
+}
+
+/* Resource management for devices */
+int device_get_clock_freq(struct device *dev, int index) {
+    /* TODO: Implement clock frequency extraction from FDT */
+    (void)dev;
+    (void)index;
+    return 0;
+}
+
+int device_register_fdt(struct device *dev, int fdt_offset) {
+    if (!dev) {
+        return -1;
+    }
+    
+    dev->fdt_offset = fdt_offset;
+    
+    /* Add to global device list */
+    dev->next = device_registry.devices;
+    device_registry.devices = dev;
+    device_registry.count++;
+    
+    return 0;
 }
 
 /* Print device information */

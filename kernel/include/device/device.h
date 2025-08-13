@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <device/resource.h>
 
 // Device limits and constants
 #define DEVICE_NAME_MAX         64
@@ -19,7 +20,6 @@
 
 // Forward declarations
 struct driver;
-struct resource;
 
 // Device types
 typedef enum {
@@ -109,6 +109,8 @@ const char *device_get_name(struct device *dev);
 device_type_t device_get_type(struct device *dev);
 void device_set_driver_data(struct device *dev, void *data);
 void *device_get_driver_data(struct device *dev);
+const char *device_get_compatible(struct device *dev);
+void device_set_compatible(struct device *dev, const char *compatible);
 
 // Device state management
 bool device_activate(struct device *dev);
@@ -136,5 +138,10 @@ void device_pool_stats(void);
 
 // Initialize device subsystem
 int device_init(void *fdt);
+
+// Resource management for devices
+struct resource *device_get_resource(struct device *dev, resource_type_t type, int index);
+int device_get_clock_freq(struct device *dev, int index);
+int device_register_fdt(struct device *dev, int fdt_offset);
 
 #endif // __DEVICE_H

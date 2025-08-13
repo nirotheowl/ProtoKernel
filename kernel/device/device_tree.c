@@ -32,6 +32,9 @@ static const device_type_map_t device_type_map[] = {
     { "ns16550a", DEV_TYPE_UART },
     { "ns16550", DEV_TYPE_UART },
     { "8250", DEV_TYPE_UART },
+    { "pl011", DEV_TYPE_UART },
+    { "arm,pl011", DEV_TYPE_UART },
+    { "sifive,uart0", DEV_TYPE_UART },
     
     // PCI
     { "pci-host-ecam-generic", DEV_TYPE_PCI },

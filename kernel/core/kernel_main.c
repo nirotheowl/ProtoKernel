@@ -18,6 +18,8 @@
 #include <memory/vmm.h>
 #include <memory/devmap.h>
 #include <device/device.h>
+#include <drivers/driver.h>
+#include <drivers/uart_drivers.h>
 // #include <tests/mmu_tests.h>
 // #include <tests/pmm_tests.h>
 // #include <tests/memory_tests.h>
@@ -86,8 +88,14 @@ void kernel_main(void* dtb) {
     // Now devmap_init can use the discovered devices
     devmap_init();
     
-    // Initialize UART with proper device mapping
+    // Initialize driver subsystem
+    driver_init();
+    
+    // Initialize UART (registers drivers)
     uart_init();
+    
+    // Auto-select console UART from FDT
+    uart_console_auto_select(fdt_mgr_get_blob());
    
     // KERNEL LOGS START HERE! 
     uart_puts("\n=======================================\n");
@@ -137,7 +145,10 @@ void kernel_main(void* dtb) {
     devmap_print_mappings();
     
     // Print the device tree
-    // device_print_tree(NULL, 0);
+    device_print_tree(NULL, 0);
+    
+    // Print driver registry
+    driver_print_registry();
     
     // Print memory statistics
     pmm_print_stats();
