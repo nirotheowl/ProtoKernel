@@ -68,7 +68,4 @@ int memmap_is_device_memory(uint64_t addr);
 int memmap_is_secure_memory(uint64_t addr);
 int memmap_is_dma_capable(uint64_t addr);
 
-// Get appropriate page attributes for region
-uint64_t memmap_get_page_attrs(uint64_t addr);
-
 #endif // MEMMAP_H
