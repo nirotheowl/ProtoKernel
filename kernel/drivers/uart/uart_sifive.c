@@ -8,7 +8,7 @@
 #include <drivers/driver.h>
 #include <drivers/driver_class.h>
 #include <drivers/uart_drivers.h>
-#include <drivers/driver_registry.h>
+#include <drivers/driver_module.h>
 #include <device/device.h>
 #include <device/resource.h>
 #include <uart.h>
@@ -366,4 +366,4 @@ static void sifive_driver_init(void) {
     }
 }
 
-UART_DRIVER_REGISTER(sifive_driver_init, DRIVER_PRIO_NORMAL);
+UART_DRIVER_MODULE(sifive_driver_init, DRIVER_PRIO_NORMAL);

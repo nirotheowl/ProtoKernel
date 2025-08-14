@@ -146,28 +146,7 @@ void driver_print_info(struct driver *drv);
 const char *driver_class_to_string(driver_class_t class);
 driver_class_t driver_string_to_class(const char *str);
 
-// Early driver support (for console, etc.)
-struct early_driver {
-    const char *compatible;
-    int (*init)(uintptr_t base, uint32_t size);
-    void (*putc)(char c);
-};
-
-// Macro for declaring early drivers
-#define EARLY_DRIVER(name, compat, init_fn, putc_fn) \
-    static struct early_driver __early_##name \
-    __attribute__((section(".early_drivers"), used)) = { \
-        .compatible = compat, \
-        .init = init_fn, \
-        .putc = putc_fn \
-    }
-
+// Initialize driver subsystem
 int driver_init(void);
-
-// Module-like macros for built-in drivers
-#define module_driver_init(initfn) \
-    static void __attribute__((constructor)) initfn##_module(void) { \
-        initfn(); \
-    }
 
 #endif // __DRIVER_H

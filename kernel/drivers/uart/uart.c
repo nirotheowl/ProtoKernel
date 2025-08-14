@@ -7,7 +7,7 @@
 #include <uart.h>
 #include <drivers/driver.h>
 #include <drivers/uart_drivers.h>
-#include <drivers/driver_registry.h>
+#include <drivers/driver_module.h>
 #include <device/device.h>
 #include <string.h>
 
@@ -19,7 +19,7 @@ void uart_init(void) {
     uart_framework_init();
     
     // Automatically register all UART drivers from linker section
-    driver_registry_init_uart();
+    driver_module_init_uart();
 }
 
 void uart_putc(char c) {

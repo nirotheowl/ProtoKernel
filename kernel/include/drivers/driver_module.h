@@ -1,11 +1,11 @@
 /*
- * kernel/include/drivers/driver_registry.h
+ * kernel/include/drivers/driver_module.h
  * 
- * Automatic driver registration system using linker sections
+ * Automatic driver module initialization system using linker sections
  */
 
-#ifndef __DRIVER_REGISTRY_H
-#define __DRIVER_REGISTRY_H
+#ifndef __DRIVER_MODULE_H
+#define __DRIVER_MODULE_H
 
 #include <stddef.h>
 
@@ -19,17 +19,17 @@ enum driver_priority {
     DRIVER_PRIO_LATE = 900,     // Late initialization drivers
 };
 
-// Driver registration entry
+// Driver module initialization entry
 struct driver_init_entry {
     driver_init_fn init;
     int priority;
     const char *name;
 };
 
-// UART driver registration macro
-// Places driver init function in special linker section
+// UART driver module macro
+// Places driver init function in special linker section for automatic initialization
 // Priority determines initialization order (lower runs first)
-#define UART_DRIVER_REGISTER(initfn, prio) \
+#define UART_DRIVER_MODULE(initfn, prio) \
     static const struct driver_init_entry __uart_driver_##initfn \
     __attribute__((used, section(".uart_drivers"), aligned(8))) = { \
         .init = initfn, \
@@ -37,8 +37,8 @@ struct driver_init_entry {
         .name = #initfn \
     }
 
-// Generic driver registration for future subsystems
-#define DRIVER_REGISTER(subsys, initfn, prio) \
+// Generic driver module macro for future subsystems
+#define DRIVER_MODULE(subsys, initfn, prio) \
     static const struct driver_init_entry __##subsys##_driver_##initfn \
     __attribute__((used, section("." #subsys "_drivers"), aligned(8))) = { \
         .init = initfn, \
@@ -50,8 +50,8 @@ struct driver_init_entry {
 extern struct driver_init_entry __uart_drivers_start[];
 extern struct driver_init_entry __uart_drivers_end[];
 
-// Helper to iterate and initialize drivers
-static inline void driver_registry_init_uart(void) {
+// Helper to iterate and initialize driver modules
+static inline void driver_module_init_uart(void) {
     struct driver_init_entry *entry;
     
     // Simple iteration - could add priority sorting later
@@ -62,4 +62,4 @@ static inline void driver_registry_init_uart(void) {
     }
 }
 
-#endif /* __DRIVER_REGISTRY_H */
+#endif /* __DRIVER_MODULE_H */
