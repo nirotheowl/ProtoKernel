@@ -50,22 +50,18 @@
 #define SIFIVE_UART_IP_TXWM            (1 << 0)    // TX watermark interrupt pending
 #define SIFIVE_UART_IP_RXWM            (1 << 1)    // RX watermark interrupt pending
 
-// SiFive UART driver private data
 struct sifive_priv {
-    bool initialized;       // Driver initialized flag
+    bool initialized;
 };
 
-// Forward declaration
 static int sifive_set_baudrate(struct uart_softc *sc, uint32_t baud);
 
-// Device match table
 static struct device_match sifive_matches[] = {
     { MATCH_COMPATIBLE, "sifive,uart0", NULL },
     { MATCH_COMPATIBLE, "sifive,fu540-c000-uart", NULL },
     { MATCH_COMPATIBLE, "sifive,fu740-c000-uart", NULL },
 };
 
-// UART operations implementation
 static int sifive_init(struct uart_softc *sc) {
     volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
     
@@ -139,9 +135,7 @@ static int sifive_set_baudrate(struct uart_softc *sc, uint32_t baud) {
     return 0;
 }
 
-static int sifive_set_format(struct uart_softc *sc, int databits, int stopbits, 
-                             uart_parity_t parity)
-{
+static int sifive_set_format(struct uart_softc *sc, int databits, int stopbits, uart_parity_t parity) {
     volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
     uint32_t txctrl;
     
@@ -224,7 +218,6 @@ static struct uart_class sifive_uart_class = {
     .capabilities = UART_CAP_FIFO,  // Basic FIFO support, no modem control
 };
 
-// Driver probe function
 static int sifive_probe(struct device *dev) {
     const char *compat;
     
@@ -244,7 +237,6 @@ static int sifive_probe(struct device *dev) {
     return PROBE_SCORE_NONE;
 }
 
-// Driver attach function
 static int sifive_attach(struct device *dev) {
     struct uart_softc *sc;
     struct sifive_priv *priv;
@@ -306,13 +298,9 @@ static int sifive_attach(struct device *dev) {
     uart_puthex((uint64_t)sc->regs);
     uart_puts("\n");
     
-    // Check if this should be the console
-    // TODO: Check FDT for stdout-path or console property
-    
     return 0;
 }
 
-// Driver detach function
 static int sifive_detach(struct device *dev) {
     struct uart_softc *sc;
     struct sifive_priv *priv;
@@ -345,7 +333,6 @@ static int sifive_detach(struct device *dev) {
     return 0;
 }
 
-// Driver operations structure
 static struct driver_ops sifive_driver_ops = {
     .probe = sifive_probe,
     .attach = sifive_attach,
@@ -355,7 +342,6 @@ static struct driver_ops sifive_driver_ops = {
     .ioctl = NULL,
 };
 
-// Driver structure
 static struct driver sifive_driver = {
     .name = "sifive_uart",
     .class = DRIVER_CLASS_UART,
@@ -367,7 +353,6 @@ static struct driver sifive_driver = {
     .flags = DRIVER_FLAG_BUILTIN,
 };
 
-// Driver initialization function
 static void sifive_driver_init(void) {
     int ret;
     

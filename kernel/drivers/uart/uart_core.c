@@ -22,9 +22,7 @@ static struct uart_softc *boot_uart = NULL;
 static struct uart_softc *uart_devices = NULL;
 static uint32_t uart_count = 0;
 
-/*
- * Get UART software context from device
- */
+// Get UART software context from device
 struct uart_softc *uart_device_get_softc(struct device *dev) {
     if (!dev || !dev->driver) {
         return NULL;
@@ -38,9 +36,7 @@ struct uart_softc *uart_device_get_softc(struct device *dev) {
     return (struct uart_softc *)device_get_driver_data(dev);
 }
 
-/*
- * Register a UART device
- */
+// Register a UART device
 static int uart_register_device(struct uart_softc *sc) {
     if (!sc) {
         return -1;
@@ -54,12 +50,8 @@ static int uart_register_device(struct uart_softc *sc) {
     return 0;
 }
 
-/*
- * Initialize UART software context
- */
-int uart_softc_init(struct uart_softc *sc, struct device *dev, 
-                   const struct uart_class *class)
-{
+// Initialize UART software context
+int uart_softc_init(struct uart_softc *sc, struct device *dev, const struct uart_class *class) {
     if (!sc || !dev || !class) {
         return -1;
     }
@@ -95,9 +87,7 @@ int uart_softc_init(struct uart_softc *sc, struct device *dev,
     return 0;
 }
 
-/*
- * UART putc wrapper
- */
+// UART putc wrapper
 void uart_softc_putc(struct uart_softc *sc, char c) {
     if (!sc || !sc->class || !sc->class->ops || !sc->class->ops->putc) {
         return;
@@ -106,9 +96,7 @@ void uart_softc_putc(struct uart_softc *sc, char c) {
     sc->class->ops->putc(sc, c);
 }
 
-/*
- * UART getc wrapper
- */
+// UART getc wrapper
 int uart_softc_getc(struct uart_softc *sc) {
     if (!sc || !sc->class || !sc->class->ops || !sc->class->ops->getc) {
         return -1;
@@ -117,9 +105,7 @@ int uart_softc_getc(struct uart_softc *sc) {
     return sc->class->ops->getc(sc);
 }
 
-/*
- * UART readable check wrapper
- */
+// UART readable check wrapper
 bool uart_softc_readable(struct uart_softc *sc) {
     if (!sc || !sc->class || !sc->class->ops || !sc->class->ops->readable) {
         return false;
@@ -128,9 +114,7 @@ bool uart_softc_readable(struct uart_softc *sc) {
     return sc->class->ops->readable(sc);
 }
 
-/*
- * Set UART baud rate
- */
+// Set UART baud rate
 int uart_softc_set_baudrate(struct uart_softc *sc, uint32_t baud) {
     if (!sc || !sc->class || !sc->class->ops || !sc->class->ops->set_baudrate) {
         return -1;
@@ -144,9 +128,7 @@ int uart_softc_set_baudrate(struct uart_softc *sc, uint32_t baud) {
     return ret;
 }
 
-/*
- * Set UART format
- */
+// Set UART format
 int uart_softc_set_format(struct uart_softc *sc, int databits, int stopbits, 
                          uart_parity_t parity)
 {
@@ -164,9 +146,7 @@ int uart_softc_set_format(struct uart_softc *sc, int databits, int stopbits,
     return ret;
 }
 
-/*
- * Attach UART as console
- */
+// Attach UART as console
 int uart_console_attach(struct uart_softc *sc) {
     if (!sc) {
         return -1;
@@ -184,30 +164,22 @@ int uart_console_attach(struct uart_softc *sc) {
     return -1;
 }
 
-/*
- * Get console UART
- */
+// Get console UART
 struct uart_softc *uart_console_get(void) {
     return console_uart;
 }
 
-/*
- * Set boot UART (early console)
- */
+// Set boot UART (early console)
 void uart_boot_set(struct uart_softc *sc) {
     boot_uart = sc;
 }
 
-/*
- * Get boot UART
- */
+// Get boot UART
 struct uart_softc *uart_boot_get(void) {
     return boot_uart;
 }
 
-/*
- * Console output functions using UART framework
- */
+// Console output functions using UART framework
 void uart_console_putc(char c) {
     if (console_uart) {
         uart_softc_putc(console_uart, c);
@@ -235,9 +207,7 @@ bool uart_console_readable(void) {
     return false;
 }
 
-/*
- * Print UART device information
- */
+// Print UART device information
 void uart_print_info(struct uart_softc *sc) {
     if (!sc) {
         return;
@@ -288,9 +258,7 @@ void uart_print_info(struct uart_softc *sc) {
     }
 }
 
-/*
- * List all UART devices
- */
+// List all UART devices
 void uart_list_devices(void) {
     struct uart_softc *sc;
     
@@ -306,9 +274,7 @@ void uart_list_devices(void) {
     uart_puts("\n");
 }
 
-/*
- * Initialize UART framework
- */
+// Initialize UART framework
 int uart_framework_init(void) {
     console_uart = NULL;
     boot_uart = NULL;
@@ -320,10 +286,8 @@ int uart_framework_init(void) {
     return 0;
 }
 
-/*
- * Auto-detect and select console UART
- * This should be called after FDT parsing
- */
+// Auto-detect and select console UART
+// This should be called after FDT parsing
 int uart_console_autodetect(void) {
     struct device *dev;
     struct uart_softc *sc;

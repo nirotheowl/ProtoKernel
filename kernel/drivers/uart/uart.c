@@ -1,7 +1,7 @@
 /*
  * kernel/drivers/uart/uart.c
  * 
- * UART subsystem initialization and console output
+ * Temporary UART functions used for kernel development 
  */
 
 #include <uart.h>

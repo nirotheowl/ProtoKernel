@@ -1,8 +1,8 @@
 /*
  * kernel/drivers/uart/uart_ns16550.c
  * 
- * NS16550/8250 UART driver using the new driver framework
- * Supports standard 16550-compatible UARTs found on many platforms
+ * NS16550/8250 UART driver
+ * Supports standard 16550-compatible UART(s)
  */
 
 #include <drivers/driver.h>
@@ -66,7 +66,6 @@
 #define NS16550_MCR_OUT2    0x08    // Output 2 (enables interrupts)
 #define NS16550_MCR_LOOP    0x10    // Loopback mode
 
-// NS16550 driver private data
 struct ns16550_priv {
     uint32_t reg_shift;     // Register shift (0, 1, or 2)
     uint32_t reg_width;     // Register width (1, 2, or 4 bytes)
@@ -76,16 +75,14 @@ struct ns16550_priv {
 
 // Device-specific configurations
 static struct ns16550_priv dw_apb_config = {
-    .reg_shift = 2,         // 32-bit aligned registers
+    .reg_shift = 2, // 32-bit aligned registers
     .reg_width = 4,
     .has_fifo = true,
     .fifo_size = 16,
 };
 
-// Forward declaration
 static int ns16550_set_baudrate(struct uart_softc *sc, uint32_t baud);
 
-// Device match table
 static struct device_match ns16550_matches[] = {
     { MATCH_COMPATIBLE, "ns16550", NULL },
     { MATCH_COMPATIBLE, "ns16550a", NULL },
@@ -96,7 +93,6 @@ static struct device_match ns16550_matches[] = {
     { MATCH_COMPATIBLE, "snps,dw-apb-uart", &dw_apb_config },
 };
 
-// Helper function to read register
 static uint32_t ns16550_read_reg(struct uart_softc *sc, uint32_t reg) {
     struct ns16550_priv *priv = (struct ns16550_priv *)sc->priv;
     volatile uint8_t *base8 = (volatile uint8_t *)sc->regs;
@@ -116,7 +112,6 @@ static uint32_t ns16550_read_reg(struct uart_softc *sc, uint32_t reg) {
     }
 }
 
-// Helper function to write register
 static void ns16550_write_reg(struct uart_softc *sc, uint32_t reg, uint32_t val) {
     struct ns16550_priv *priv = (struct ns16550_priv *)sc->priv;
     volatile uint8_t *base8 = (volatile uint8_t *)sc->regs;
@@ -140,7 +135,6 @@ static void ns16550_write_reg(struct uart_softc *sc, uint32_t reg, uint32_t val)
     }
 }
 
-// UART operations implementation
 static int ns16550_init(struct uart_softc *sc) {
     struct ns16550_priv *priv = (struct ns16550_priv *)sc->priv;
     
@@ -218,9 +212,7 @@ static int ns16550_set_baudrate(struct uart_softc *sc, uint32_t baud) {
     return 0;
 }
 
-static int ns16550_set_format(struct uart_softc *sc, int databits, int stopbits, 
-                              uart_parity_t parity)
-{
+static int ns16550_set_format(struct uart_softc *sc, int databits, int stopbits, uart_parity_t parity) {
     uint8_t lcr = 0;
     
     // Set data bits
@@ -294,7 +286,6 @@ static void ns16550_flush(struct uart_softc *sc) {
     }
 }
 
-// UART class operations
 static struct uart_ops ns16550_uart_ops = {
     .init = ns16550_init,
     .putc = ns16550_putc,
@@ -307,7 +298,6 @@ static struct uart_ops ns16550_uart_ops = {
     .flush = ns16550_flush,
 };
 
-// UART class descriptor
 static struct uart_class ns16550_uart_class = {
     .name = "ns16550",
     .ops = &ns16550_uart_ops,
@@ -315,7 +305,6 @@ static struct uart_class ns16550_uart_class = {
     .capabilities = UART_CAP_FIFO | UART_CAP_MODEM,
 };
 
-// Driver probe function
 static int ns16550_probe(struct device *dev) {
     const char *compat;
     
@@ -340,7 +329,6 @@ static int ns16550_probe(struct device *dev) {
     return PROBE_SCORE_NONE;
 }
 
-// Driver attach function
 static int ns16550_attach(struct device *dev) {
     struct uart_softc *sc;
     struct ns16550_priv *priv;
@@ -404,17 +392,11 @@ static int ns16550_attach(struct device *dev) {
     // Mark device as active
     device_activate(dev);
     
-    
-    // Check if this should be the console
-    // TODO: Check FDT for stdout-path or console property
-    
     return 0;
 }
 
-// Driver detach function
 static int ns16550_detach(struct device *dev) {
     struct uart_softc *sc;
-    
     
     // Get software context
     sc = device_get_driver_data(dev);
@@ -435,7 +417,6 @@ static int ns16550_detach(struct device *dev) {
     return 0;
 }
 
-// Driver operations structure
 static struct driver_ops ns16550_driver_ops = {
     .probe = ns16550_probe,
     .attach = ns16550_attach,
@@ -445,7 +426,6 @@ static struct driver_ops ns16550_driver_ops = {
     .ioctl = NULL,
 };
 
-// Driver structure
 static struct driver ns16550_driver = {
     .name = "ns16550_uart",
     .class = DRIVER_CLASS_UART,
@@ -457,7 +437,6 @@ static struct driver ns16550_driver = {
     .flags = DRIVER_FLAG_BUILTIN,
 };
 
-// Driver initialization function
 static void ns16550_driver_init(void) {
     int ret;
     
@@ -471,5 +450,4 @@ static void ns16550_driver_init(void) {
     }
 }
 
-// Driver registration
 UART_DRIVER_REGISTER(ns16550_driver_init, DRIVER_PRIO_NORMAL);

@@ -12,11 +12,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// Forward declarations
 struct device;
 struct driver;
 
-// Match types for device-driver binding
+// Match types used for device-driver bindings 
 typedef enum {
     MATCH_COMPATIBLE,      // FDT compatible string
     MATCH_DEVICE_ID,       // PCI/USB vendor:device ID
@@ -26,7 +25,7 @@ typedef enum {
     MATCH_PLATFORM_DATA,   // Legacy platform data
 } match_type_t;
 
-// Driver classes for categorization
+// Driver classes. Expect this to change
 typedef enum {
     DRIVER_CLASS_NONE,
     DRIVER_CLASS_UART,
@@ -44,21 +43,19 @@ typedef enum {
     DRIVER_CLASS_RTC,
     DRIVER_CLASS_WATCHDOG,
     DRIVER_CLASS_TIMER,
-    DRIVER_CLASS_INTC,     // Interrupt controller
+    DRIVER_CLASS_INTC,
     DRIVER_CLASS_DMA,
     DRIVER_CLASS_POWER,
     DRIVER_CLASS_THERMAL,
     DRIVER_CLASS_MISC,
 } driver_class_t;
 
-// Device match entry for driver matching
 struct device_match {
     match_type_t        type;          // Type of match
     const char         *value;         // Match value (string)
     void               *driver_data;   // Optional driver-specific data
 };
 
-// Driver operations
 struct driver_ops {
     // Probe device for compatibility (returns match score 0-100)
     int (*probe)(struct device *dev);
@@ -77,7 +74,7 @@ struct driver_ops {
     int (*ioctl)(struct device *dev, int cmd, void *arg);
 };
 
-// Driver structure
+// General driver structure
 struct driver {
     // Identification
     const char              *name;         // Driver name
@@ -165,7 +162,6 @@ struct early_driver {
         .putc = putc_fn \
     }
 
-// Initialize driver subsystem
 int driver_init(void);
 
 // Module-like macros for built-in drivers

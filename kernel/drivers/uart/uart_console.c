@@ -15,7 +15,6 @@
 #include <string.h>
 #include <panic.h>
 
-// Find console UART device from FDT
 static struct device *uart_find_console_device(void *fdt) {
     int chosen_offset;
     const char *fdt_console_path = NULL;
@@ -93,7 +92,6 @@ static struct device *uart_find_console_device(void *fdt) {
     return NULL;
 }
 
-// Auto-select console UART
 int uart_console_auto_select(void *fdt) {
     struct device *console_dev;
     struct uart_softc *sc;

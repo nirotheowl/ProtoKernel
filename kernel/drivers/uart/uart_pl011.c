@@ -1,8 +1,7 @@
 /*
  * kernel/drivers/uart/uart_pl011.c
  * 
- * ARM PL011 UART driver using the new driver framework
- * Fully integrated with UART class abstraction
+ * ARM PL011 UART driver
  */
 
 #include <drivers/driver.h>
@@ -310,7 +309,6 @@ static struct uart_class pl011_uart_class = {
     .capabilities = UART_CAP_FIFO | UART_CAP_MODEM,
 };
 
-// Driver probe function
 static int pl011_probe(struct device *dev) {
     const char *compat;
     
@@ -334,7 +332,6 @@ static int pl011_probe(struct device *dev) {
     return PROBE_SCORE_NONE;
 }
 
-// Driver attach function
 static int pl011_attach(struct device *dev) {
     struct uart_softc *sc;
     struct pl011_priv *priv;
@@ -396,13 +393,9 @@ static int pl011_attach(struct device *dev) {
     uart_puthex((uint64_t)sc->regs);
     uart_puts("\n");
     
-    // Check if this should be the console
-    // TODO: Check FDT for stdout-path or console property
-    
     return 0;
 }
 
-// Driver detach function
 static int pl011_detach(struct device *dev) {
     struct uart_softc *sc;
     struct pl011_priv *priv;
@@ -435,7 +428,6 @@ static int pl011_detach(struct device *dev) {
     return 0;
 }
 
-// Driver operations structure
 static struct driver_ops pl011_driver_ops = {
     .probe = pl011_probe,
     .attach = pl011_attach,
@@ -445,7 +437,6 @@ static struct driver_ops pl011_driver_ops = {
     .ioctl = NULL,
 };
 
-// Driver structure
 static struct driver pl011_driver = {
     .name = "pl011_uart",
     .class = DRIVER_CLASS_UART,
@@ -457,7 +448,7 @@ static struct driver pl011_driver = {
     .flags = DRIVER_FLAG_BUILTIN,
 };
 
-// Driver initialization function
+// NOTE: This is the *driver* init 
 static void pl011_driver_init(void) {
     int ret;
     

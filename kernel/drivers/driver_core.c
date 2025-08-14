@@ -23,11 +23,8 @@ static uint32_t driver_count = 0;
 // Lock for registry protection (will use spinlock when available)
 // static spinlock_t driver_lock = SPINLOCK_INIT;
 
-/*
- * Helper function to find a match entry in driver's match table
- */
-static const struct device_match *
-find_match_entry(struct driver *drv, match_type_t type, const char *value) {
+// Helper function to find a match entry in driver's match table
+static const struct device_match *find_match_entry(struct driver *drv, match_type_t type, const char *value) {
     if (!drv || !drv->matches || !value) {
         return NULL;
     }
@@ -44,9 +41,6 @@ find_match_entry(struct driver *drv, match_type_t type, const char *value) {
     return NULL;
 }
 
-/*
- * Calculate match score based on compatible string
- */
 static int calculate_compatible_score(struct driver *drv, const char *compatible) {
     const struct device_match *match;
     
@@ -85,9 +79,6 @@ static int calculate_compatible_score(struct driver *drv, const char *compatible
     return PROBE_SCORE_NONE;
 }
 
-/*
- * Register a driver
- */
 int driver_register(struct driver *drv) {
     if (!drv || !drv->name || !drv->ops) {
         return -1;
@@ -131,9 +122,6 @@ int driver_register(struct driver *drv) {
     return 0;
 }
 
-/*
- * Unregister a driver
- */
 int driver_unregister(struct driver *drv) {
     struct driver **pp;
     
@@ -170,9 +158,6 @@ int driver_unregister(struct driver *drv) {
     return -1;  // Not found
 }
 
-/*
- * Find driver by name
- */
 struct driver *driver_find_by_name(const char *name) {
     struct driver *drv;
     
@@ -189,9 +174,6 @@ struct driver *driver_find_by_name(const char *name) {
     return NULL;
 }
 
-/*
- * Find driver by class
- */
 struct driver *driver_find_by_class(driver_class_t class) {
     struct driver *drv;
     
@@ -204,9 +186,7 @@ struct driver *driver_find_by_class(driver_class_t class) {
     return NULL;
 }
 
-/*
- * Get next driver in registry
- */
+// Get next driver in registry
 struct driver *driver_get_next(struct driver *drv) {
     if (!drv) {
         return driver_registry;
@@ -214,9 +194,7 @@ struct driver *driver_get_next(struct driver *drv) {
     return drv->next;
 }
 
-/*
- * Probe device for best matching driver
- */
+// Probe device for best matching driver
 int driver_probe_device(struct device *dev) {
     struct driver *drv, *best_driver = NULL;
     int score, best_score = 0;
@@ -311,9 +289,6 @@ int driver_probe_device(struct device *dev) {
     return -1;  // No suitable driver found
 }
 
-/*
- * Attach driver to device
- */
 int driver_attach_device(struct device *dev, struct driver *drv) {
     int ret;
     
@@ -353,9 +328,6 @@ int driver_attach_device(struct device *dev, struct driver *drv) {
     return 0;
 }
 
-/*
- * Detach driver from device
- */
 int driver_detach_device(struct device *dev) {
     struct driver *drv;
     int ret = 0;
@@ -388,9 +360,7 @@ int driver_detach_device(struct device *dev) {
     return 0;
 }
 
-/*
- * Match driver against compatible string
- */
+// Match driver against compatible string
 int driver_match_compatible(struct driver *drv, const char *compatible) {
     if (!drv || !compatible) {
         return 0;
@@ -399,9 +369,7 @@ int driver_match_compatible(struct driver *drv, const char *compatible) {
     return calculate_compatible_score(drv, compatible);
 }
 
-/*
- * Match driver against device ID
- */
+// Match driver against device ID
 int driver_match_device_id(struct driver *drv, const char *device_id) {
     if (!drv || !device_id) {
         return 0;
@@ -414,9 +382,7 @@ int driver_match_device_id(struct driver *drv, const char *device_id) {
     return PROBE_SCORE_NONE;
 }
 
-/*
- * Match driver against property
- */
+// Match driver against property
 int driver_match_property(struct driver *drv, const char *prop, const char *value) {
     if (!drv || !prop || !value) {
         return 0;
@@ -438,16 +404,10 @@ int driver_match_property(struct driver *drv, const char *prop, const char *valu
     return PROBE_SCORE_NONE;
 }
 
-/*
- * Get count of registered drivers
- */
 uint32_t driver_count_registered(void) {
     return driver_count;
 }
 
-/*
- * Print driver registry
- */
 void driver_print_registry(void) {
     struct driver *drv;
     
@@ -477,9 +437,6 @@ void driver_print_registry(void) {
     uart_puts("\n");
 }
 
-/*
- * Print driver information
- */
 void driver_print_info(struct driver *drv) {
     if (!drv) {
         return;
@@ -533,9 +490,7 @@ void driver_print_info(struct driver *drv) {
     }
 }
 
-/*
- * Convert driver class to string
- */
+// Convert driver class to string
 const char *driver_class_to_string(driver_class_t class) {
     switch (class) {
         case DRIVER_CLASS_NONE:     return "none";
@@ -563,9 +518,7 @@ const char *driver_class_to_string(driver_class_t class) {
     }
 }
 
-/*
- * Convert string to driver class
- */
+// Convert string to driver class
 driver_class_t driver_string_to_class(const char *str) {
     if (!str) return DRIVER_CLASS_NONE;
     
@@ -593,9 +546,7 @@ driver_class_t driver_string_to_class(const char *str) {
     return DRIVER_CLASS_NONE;
 }
 
-/*
- * Initialize driver subsystem
- */
+// Initialize driver subsystem
 int driver_init(void) {
     driver_registry = NULL;
     driver_count = 0;
