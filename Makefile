@@ -19,7 +19,21 @@ endif
 
 # Toolchain
 ifeq ($(ARCH),arm64)
-    CROSS_COMPILE ?= aarch64-none-elf-
+    # Try to auto-detect ARM64 toolchain (different distros use different names)
+    ifeq ($(CROSS_COMPILE),)
+        ifneq ($(shell which aarch64-none-elf-gcc 2>/dev/null),)
+            CROSS_COMPILE = aarch64-none-elf-
+        else ifneq ($(shell which aarch64-elf-gcc 2>/dev/null),)
+            CROSS_COMPILE = aarch64-elf-
+        else ifneq ($(shell which aarch64-unknown-elf-gcc 2>/dev/null),)
+            CROSS_COMPILE = aarch64-unknown-elf-
+        else ifneq ($(shell which aarch64-linux-gnu-gcc 2>/dev/null),)
+            $(warning Using linux-gnu toolchain. This may work but is not guaranteed to be compatible.)
+            CROSS_COMPILE = aarch64-linux-gnu-
+        else
+            $(error ARM64 toolchain not found. Please install one of: aarch64-none-elf, aarch64-elf, or aarch64-linux-gnu toolchain, or set CROSS_COMPILE manually)
+        endif
+    endif
 else ifeq ($(ARCH),riscv)
     # Try to auto-detect RISC-V toolchain (different distros use different names)
     ifeq ($(CROSS_COMPILE),)
