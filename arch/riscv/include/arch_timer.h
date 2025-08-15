@@ -56,8 +56,8 @@ static inline void arch_timer_clear_interrupt(void) {
 }
 
 static inline void arch_cpu_relax(void) {
-    // RISC-V pause instruction (hint)
-    __asm__ volatile("pause");
+    // RISC-V pause instruction (hint) - use nop for compatibility
+    __asm__ volatile("nop");
 }
 
 #endif /* _ARCH_TIMER_H */

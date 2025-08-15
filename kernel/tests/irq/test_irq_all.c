@@ -31,6 +31,11 @@ void run_all_irq_tests(void) {
     extern void test_riscv_plic_comprehensive(void);
     uart_puts("\n>>> Running RISC-V PLIC Tests...\n");
     test_riscv_plic_comprehensive();
+    
+    // RISC-V hardware interrupt tests
+    extern void test_riscv_hardware_interrupts(void);
+    uart_puts("\n>>> Running RISC-V Hardware Interrupt Tests...\n");
+    test_riscv_hardware_interrupts();
 #endif
     
     uart_puts("\n");

@@ -12,7 +12,6 @@
 #include <irqchip/riscv-plic.h>
 #include <irq/irq.h>
 #include <irq/irq_domain.h>
-#include <arch_csr.h>
 #include <uart.h>
 #include <stddef.h>
 #include <string.h>
