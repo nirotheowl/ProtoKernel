@@ -4,6 +4,9 @@
  * ARM Generic Interrupt Controller (GIC) driver implementation
  */
 
+/* Only compile this driver for ARM64 architecture */
+#ifdef __aarch64__
+
 #include <irqchip/arm-gic.h>
 #include <irq/irq.h>
 #include <irq/irq_domain.h>
@@ -512,7 +515,7 @@ static const struct device_match gic_matches[] = {
 
 // GIC driver structure
 static struct driver gic_driver = {
-    .name = "gic",
+    .name = "arm-gic",
     .class = DRIVER_CLASS_INTC,
     .ops = &gic_driver_ops,
     .matches = gic_matches,
@@ -537,3 +540,28 @@ static void gic_driver_init(void) {
 
 // Register as an early IRQCHIP driver
 IRQCHIP_DRIVER_MODULE(gic_driver_init, DRIVER_PRIO_EARLY);
+
+#else /* !__aarch64__ */
+
+/* Stub implementations for non-ARM64 architectures */
+#include <stdint.h>
+#include <stddef.h>
+
+struct device;
+struct gic_data *gic_primary = NULL;
+
+int gic_init(void *dist_base, void *cpu_base) { 
+    (void)dist_base; (void)cpu_base;
+    return -1; 
+}
+void gic_mask_irq(uint32_t hwirq) { (void)hwirq; }
+void gic_unmask_irq(uint32_t hwirq) { (void)hwirq; }
+void gic_eoi(uint32_t hwirq) { (void)hwirq; }
+void gic_set_priority(uint32_t hwirq, uint32_t priority) { (void)hwirq; (void)priority; }
+void gic_set_target(uint32_t hwirq, uint32_t cpu_mask) { (void)hwirq; (void)cpu_mask; }
+void gic_send_sgi(uint32_t sgi_id, uint32_t target_list) { (void)sgi_id; (void)target_list; }
+uint32_t gic_acknowledge_irq(void) { return 1023; }
+void gic_handle_irq(void) { }
+int gic_probe(struct device *dev) { (void)dev; return -1; }
+
+#endif /* __aarch64__ */

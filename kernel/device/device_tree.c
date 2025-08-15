@@ -115,6 +115,11 @@ device_type_t device_tree_get_device_type(int node_offset) {
         return DEV_TYPE_UNKNOWN;
     }
     
+    // Check if this is an interrupt controller
+    if (fdt_getprop(fdt_blob, node_offset, "interrupt-controller", &len) != NULL) {
+        return DEV_TYPE_INTERRUPT;
+    }
+    
     // First check device_type property
     device_type = fdt_getprop(fdt_blob, node_offset, FDT_PROP_DEVICE_TYPE, &len);
     if (device_type) {

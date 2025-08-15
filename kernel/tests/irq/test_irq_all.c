@@ -27,8 +27,10 @@ void run_all_irq_tests(void) {
     uart_puts("\n>>> Running Real ARM Hardware Interrupt Tests...\n");
     run_arm_real_interrupt_tests();
 #elif defined(__riscv)
-    // RISC-V PLIC tests will go here
-    uart_puts("\n>>> RISC-V PLIC tests not yet implemented\n");
+    // RISC-V PLIC tests
+    extern void test_riscv_plic_comprehensive(void);
+    uart_puts("\n>>> Running RISC-V PLIC Tests...\n");
+    test_riscv_plic_comprehensive();
 #endif
     
     uart_puts("\n");

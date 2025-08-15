@@ -39,7 +39,7 @@
  */
 
 /*
- * ARM64 Linux-compatible Image Header
+ * ARM64 "Linux" boot header
  * Required for bootloader compatibility (U-Boot, QEMU, etc.)
  */
 _start:

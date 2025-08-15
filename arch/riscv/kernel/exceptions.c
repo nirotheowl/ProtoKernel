@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <panic.h>
 #include <uart.h>
+#include <irqchip/riscv-intc.h>
+#include <irqchip/riscv-plic.h>
 
 // External trap vector from trap.S
 extern void trap_vector(void);
@@ -81,12 +83,15 @@ void riscv_trap_handler(arch_context_t *context, uint64_t cause, uint64_t tval) 
     int is_interrupt = (cause & CAUSE_INTERRUPT_BIT) != 0;
     
     if (is_interrupt) {
-        // Handle interrupt
-        uart_puts("[RISC-V] Interrupt: ");
-        uart_puts(interrupt_to_string(code));
-        uart_puts("\n");
-        
-        // TODO: Dispatch to interrupt handlers
+        // Handle interrupt through INTC
+        if (intc_primary) {
+            intc_handle_irq(code);
+        } else {
+            // Fallback for early boot before INTC is initialized
+            uart_puts("[RISC-V] Early interrupt (INTC not ready): ");
+            uart_puts(interrupt_to_string(code));
+            uart_puts("\n");
+        }
     } else {
         // Handle exception
         uart_puts("\n[RISC-V] FATAL EXCEPTION\n");
