@@ -20,6 +20,7 @@
 #include <device/device.h>
 #include <drivers/driver.h>
 #include <drivers/uart_drivers.h>
+#include <irqchip/irqchip.h>
 #include <tests/irq_tests.h>
 // #include <tests/mmu_tests.h>
 // #include <tests/pmm_tests.h>
@@ -141,6 +142,10 @@ void kernel_main(void* dtb) {
     
     // Report FDT manager state
     fdt_mgr_print_info();
+    
+    // Initialize interrupt controller drivers (after UART so we get output)
+    uart_puts("\nInitializing interrupt controllers...\n");
+    irqchip_init();
     
     // Print device mappings
     devmap_print_mappings();

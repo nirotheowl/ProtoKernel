@@ -434,7 +434,7 @@ static struct driver ns16550_driver = {
     .num_matches = sizeof(ns16550_matches) / sizeof(ns16550_matches[0]),
     .priority = 10,
     .priv_size = sizeof(struct uart_softc) + sizeof(struct ns16550_priv),
-    .flags = DRIVER_FLAG_BUILTIN,
+    .flags = DRIVER_FLAG_BUILTIN | DRIVER_FLAG_EARLY,
 };
 
 static void ns16550_driver_init(void) {

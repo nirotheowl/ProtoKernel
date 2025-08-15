@@ -445,7 +445,7 @@ static struct driver pl011_driver = {
     .num_matches = sizeof(pl011_matches) / sizeof(pl011_matches[0]),
     .priority = 10,
     .priv_size = sizeof(struct uart_softc) + sizeof(struct pl011_priv),
-    .flags = DRIVER_FLAG_BUILTIN,
+    .flags = DRIVER_FLAG_BUILTIN | DRIVER_FLAG_EARLY,
 };
 
 // NOTE: This is the *driver* init 

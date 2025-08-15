@@ -487,3 +487,12 @@ void irq_domain_free_irqs(uint32_t virq, int nr_irqs) {
         irq_dispose_mapping(virq + i);
     }
 }
+
+// Set the default IRQ domain
+void irq_set_default_domain(struct irq_domain *domain) {
+    unsigned long flags;
+    
+    spin_lock_irqsave(&irq_domain_list_lock, flags);
+    irq_default_domain = domain;
+    spin_unlock_irqrestore(&irq_domain_list_lock, flags);
+}

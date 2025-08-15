@@ -202,6 +202,9 @@ int irq_domain_alloc_irqs(struct irq_domain *domain, int nr_irqs,
 // Free allocated virqs
 void irq_domain_free_irqs(uint32_t virq, int nr_irqs);
 
+// Set the default IRQ domain
+void irq_set_default_domain(struct irq_domain *domain);
+
 // ============ Device Tree Support ============
 
 // Parse and map interrupt from device tree

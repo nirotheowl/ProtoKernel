@@ -350,7 +350,7 @@ static struct driver sifive_driver = {
     .num_matches = sizeof(sifive_matches) / sizeof(sifive_matches[0]),
     .priority = 10,
     .priv_size = sizeof(struct uart_softc) + sizeof(struct sifive_priv),
-    .flags = DRIVER_FLAG_BUILTIN,
+    .flags = DRIVER_FLAG_BUILTIN | DRIVER_FLAG_EARLY,
 };
 
 static void sifive_driver_init(void) {

@@ -27,6 +27,11 @@ SECTIONS
         *(.rodata .rodata.*)
         
         . = ALIGN(8);
+        __irqchip_drivers_start = .;
+        KEEP(*(.irqchip_drivers))
+        __irqchip_drivers_end = .;
+        
+        . = ALIGN(8);
         __uart_drivers_start = .;
         KEEP(*(.uart_drivers))
         __uart_drivers_end = .;

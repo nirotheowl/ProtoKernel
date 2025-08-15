@@ -7,6 +7,9 @@
 #include <stdint.h>
 #include <arch_exceptions.h>
 #include <uart.h>
+#include <irqchip/arm-gic.h>
+#include <irq/irq.h>
+#include <irq/irq_domain.h>
 
 // External assembly function
 extern void install_exception_vectors(void);
@@ -181,9 +184,68 @@ void sync_exception_handler(struct exception_context *ctx) {
 
 // IRQ handler
 void irq_handler(struct exception_context *ctx) {
-    uart_puts("\n!!! IRQ !!!\n");
-    dump_exception_context(ctx);
-    uart_puts("IRQ handling not implemented\n");
+    uint32_t hwirq;
+    uint32_t virq;
+    struct irq_desc *desc;
+    
+    // Check if GIC is initialized
+    if (!gic_primary) {
+        uart_puts("IRQ: No interrupt controller initialized!\n");
+        return;
+    }
+    
+    // Acknowledge the interrupt from GIC
+    hwirq = gic_acknowledge_irq();
+    
+    // Check for spurious interrupt
+    if (hwirq == GIC_SPURIOUS_IRQ) {
+        // Spurious interrupt, nothing to do
+        return;
+    }
+    
+    // Find virtual IRQ mapping
+    virq = irq_find_mapping(gic_primary->domain, hwirq);
+    if (virq == IRQ_INVALID) {
+        uart_puts("IRQ: No mapping for hardware IRQ ");
+        uart_putdec(hwirq);
+        uart_puts("\n");
+        gic_eoi(hwirq);
+        return;
+    }
+    
+    // Get IRQ descriptor
+    desc = irq_to_desc(virq);
+    if (!desc) {
+        uart_puts("IRQ: No descriptor for virtual IRQ ");
+        uart_putdec(virq);
+        uart_puts("\n");
+        gic_eoi(hwirq);
+        return;
+    }
+    
+    // Update statistics
+    desc->count++;
+    
+    // Call handler chain
+    if (desc->action && desc->action->handler) {
+        struct irq_action *action = desc->action;
+        while (action) {
+            if (action->handler) {
+                action->handler(action->dev_data);
+            }
+            action = action->next;
+        }
+    } else {
+        uart_puts("IRQ: No handler for IRQ ");
+        uart_putdec(virq);
+        uart_puts(" (hwirq ");
+        uart_putdec(hwirq);
+        uart_puts(")\n");
+        desc->spurious_count++;
+    }
+    
+    // Send End Of Interrupt
+    gic_eoi(hwirq);
 }
 
 // FIQ handler
