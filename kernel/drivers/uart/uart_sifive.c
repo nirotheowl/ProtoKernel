@@ -15,6 +15,7 @@
 #include <string.h>
 #include <memory/kmalloc.h>
 #include <panic.h>
+#include <arch_io.h>
 
 // SiFive UART registers (32-bit aligned)
 #define SIFIVE_UART_TXDATA      0x00    // Transmit data register
@@ -63,39 +64,39 @@ static struct device_match sifive_matches[] = {
 };
 
 static int sifive_init(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Disable interrupts
-    regs[SIFIVE_UART_IE/4] = 0;
+    mmio_write32(base + SIFIVE_UART_IE, 0);
     
     // Set default baud rate (115200)
     sifive_set_baudrate(sc, 115200);
     
     // Enable TX and RX with 1 stop bit
-    regs[SIFIVE_UART_TXCTRL/4] = SIFIVE_UART_TXCTRL_ENABLE;
-    regs[SIFIVE_UART_RXCTRL/4] = SIFIVE_UART_RXCTRL_ENABLE;
+    mmio_write32(base + SIFIVE_UART_TXCTRL, SIFIVE_UART_TXCTRL_ENABLE);
+    mmio_write32(base + SIFIVE_UART_RXCTRL, SIFIVE_UART_RXCTRL_ENABLE);
     
     return 0;
 }
 
 static void sifive_putc(struct uart_softc *sc, char c) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Wait for TX FIFO to have space
-    while (regs[SIFIVE_UART_TXDATA/4] & SIFIVE_UART_TXDATA_FULL) {
+    while (mmio_read32(base + SIFIVE_UART_TXDATA) & SIFIVE_UART_TXDATA_FULL) {
         // Spin
     }
     
     // Write character
-    regs[SIFIVE_UART_TXDATA/4] = c;
+    mmio_write32(base + SIFIVE_UART_TXDATA, c);
 }
 
 static int sifive_getc(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t rxdata;
     
     // Read RX data register
-    rxdata = regs[SIFIVE_UART_RXDATA/4];
+    rxdata = mmio_read32(base + SIFIVE_UART_RXDATA);
     
     // Check if RX FIFO is empty
     if (rxdata & SIFIVE_UART_RXDATA_EMPTY) {
@@ -107,13 +108,13 @@ static int sifive_getc(struct uart_softc *sc) {
 }
 
 static bool sifive_readable(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
-    uint32_t rxdata = regs[SIFIVE_UART_RXDATA/4];
+    uint8_t *base = (uint8_t *)sc->regs;
+    uint32_t rxdata = mmio_read32(base + SIFIVE_UART_RXDATA);
     return !(rxdata & SIFIVE_UART_RXDATA_EMPTY);
 }
 
 static int sifive_set_baudrate(struct uart_softc *sc, uint32_t baud) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t divisor;
     
     if (baud == 0) {
@@ -130,13 +131,13 @@ static int sifive_set_baudrate(struct uart_softc *sc, uint32_t baud) {
     }
     
     // Set divisor
-    regs[SIFIVE_UART_DIV/4] = divisor;
+    mmio_write32(base + SIFIVE_UART_DIV, divisor);
     
     return 0;
 }
 
 static int sifive_set_format(struct uart_softc *sc, int databits, int stopbits, uart_parity_t parity) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t txctrl;
     
     // SiFive UART only supports 8N1 or 8N2
@@ -149,7 +150,7 @@ static int sifive_set_format(struct uart_softc *sc, int databits, int stopbits, 
     }
     
     // Read current TX control
-    txctrl = regs[SIFIVE_UART_TXCTRL/4];
+    txctrl = mmio_read32(base + SIFIVE_UART_TXCTRL);
     
     // Set stop bits
     if (stopbits == 2) {
@@ -161,38 +162,38 @@ static int sifive_set_format(struct uart_softc *sc, int databits, int stopbits, 
     }
     
     // Write back TX control
-    regs[SIFIVE_UART_TXCTRL/4] = txctrl;
+    mmio_write32(base + SIFIVE_UART_TXCTRL, txctrl);
     
     return 0;
 }
 
 static void sifive_enable_irq(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Set RX watermark to 0 (interrupt when any data available)
-    uint32_t rxctrl = regs[SIFIVE_UART_RXCTRL/4];
+    uint32_t rxctrl = mmio_read32(base + SIFIVE_UART_RXCTRL);
     rxctrl &= ~SIFIVE_UART_RXCTRL_RXCNT_MASK;
-    regs[SIFIVE_UART_RXCTRL/4] = rxctrl;
+    mmio_write32(base + SIFIVE_UART_RXCTRL, rxctrl);
     
     // Enable RX watermark interrupt
-    regs[SIFIVE_UART_IE/4] = SIFIVE_UART_IE_RXWM;
+    mmio_write32(base + SIFIVE_UART_IE, SIFIVE_UART_IE_RXWM);
 }
 
 static void sifive_disable_irq(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Disable all interrupts
-    regs[SIFIVE_UART_IE/4] = 0;
+    mmio_write32(base + SIFIVE_UART_IE, 0);
 }
 
 static void sifive_flush(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Wait for TX FIFO to be empty
     // SiFive UART doesn't have a direct TX empty flag,
     // so we check if we can write the full FIFO depth
     // This is a simplified approach
-    while (regs[SIFIVE_UART_TXDATA/4] & SIFIVE_UART_TXDATA_FULL) {
+    while (mmio_read32(base + SIFIVE_UART_TXDATA) & SIFIVE_UART_TXDATA_FULL) {
         // Spin
     }
 }

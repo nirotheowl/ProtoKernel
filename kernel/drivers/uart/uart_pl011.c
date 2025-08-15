@@ -14,6 +14,7 @@
 #include <string.h>
 #include <memory/kmalloc.h>
 #include <panic.h>
+#include <arch_io.h>
 
 // PL011 UART registers (offsets from base)
 #define PL011_DR        0x00    // Data register
@@ -97,63 +98,64 @@ static struct device_match pl011_matches[] = {
 
 // UART operations implementation
 static int pl011_init(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Disable UART during configuration
-    regs[PL011_CR/4] = 0;
+    mmio_write32(base + PL011_CR, 0);
     
     // Clear pending interrupts
-    regs[PL011_ICR/4] = 0x7FF;
+    mmio_write32(base + PL011_ICR, 0x7FF);
     
     // Disable interrupts for now
-    regs[PL011_IMSC/4] = 0;
+    mmio_write32(base + PL011_IMSC, 0);
     
     // Enable FIFOs
-    regs[PL011_LCR_H/4] |= PL011_LCR_H_FEN;
+    uint32_t lcr_h = mmio_read32(base + PL011_LCR_H);
+    mmio_write32(base + PL011_LCR_H, lcr_h | PL011_LCR_H_FEN);
     
     // Set default format: 8N1
-    regs[PL011_LCR_H/4] = PL011_LCR_H_WLEN_8 | PL011_LCR_H_FEN;
+    mmio_write32(base + PL011_LCR_H, PL011_LCR_H_WLEN_8 | PL011_LCR_H_FEN);
     
     // Set default baud rate (115200)
     pl011_set_baudrate(sc, 115200);
     
     // Enable UART, TX, and RX
-    regs[PL011_CR/4] = PL011_CR_UARTEN | PL011_CR_TXE | PL011_CR_RXE;
+    mmio_write32(base + PL011_CR, PL011_CR_UARTEN | PL011_CR_TXE | PL011_CR_RXE);
     
     return 0;
 }
 
 static void pl011_putc(struct uart_softc *sc, char c) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Wait for transmit FIFO to have space
-    while (regs[PL011_FR/4] & PL011_FR_TXFF) {
+    while (mmio_read32(base + PL011_FR) & PL011_FR_TXFF) {
         // Spin
     }
     
     // Write character
-    regs[PL011_DR/4] = c;
+    mmio_write32(base + PL011_DR, c);
 }
 
 static int pl011_getc(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Check if receive FIFO is empty
-    if (regs[PL011_FR/4] & PL011_FR_RXFE) {
+    if (mmio_read32(base + PL011_FR) & PL011_FR_RXFE) {
         return -1;
     }
     
     // Read character
-    return regs[PL011_DR/4] & 0xFF;
+    return mmio_read32(base + PL011_DR) & 0xFF;
 }
 
 static bool pl011_readable(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
-    return !(regs[PL011_FR/4] & PL011_FR_RXFE);
+    uint8_t *base = (uint8_t *)sc->regs;
+    return !(mmio_read32(base + PL011_FR) & PL011_FR_RXFE);
 }
 
 static int pl011_set_baudrate(struct uart_softc *sc, uint32_t baud) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t ibrd, fbrd;
     uint32_t temp;
     uint32_t cr;
@@ -175,30 +177,28 @@ static int pl011_set_baudrate(struct uart_softc *sc, uint32_t baud) {
     }
     
     // Save control register
-    cr = regs[PL011_CR/4];
+    cr = mmio_read32(base + PL011_CR);
     
     // Disable UART
-    regs[PL011_CR/4] = 0;
+    mmio_write32(base + PL011_CR, 0);
     
     // Wait for UART to be not busy
-    while (regs[PL011_FR/4] & PL011_FR_BUSY) {
+    while (mmio_read32(base + PL011_FR) & PL011_FR_BUSY) {
         // Spin
     }
     
     // Set divisors
-    regs[PL011_IBRD/4] = ibrd;
-    regs[PL011_FBRD/4] = fbrd;
+    mmio_write32(base + PL011_IBRD, ibrd);
+    mmio_write32(base + PL011_FBRD, fbrd);
     
     // Restore control register
-    regs[PL011_CR/4] = cr;
+    mmio_write32(base + PL011_CR, cr);
     
     return 0;
 }
 
-static int pl011_set_format(struct uart_softc *sc, int databits, int stopbits, 
-                            uart_parity_t parity)
-{
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+static int pl011_set_format(struct uart_softc *sc, int databits, int stopbits, uart_parity_t parity) {
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t lcr = 0;
     uint32_t cr;
     
@@ -242,48 +242,48 @@ static int pl011_set_format(struct uart_softc *sc, int databits, int stopbits,
     lcr |= PL011_LCR_H_FEN;
     
     // Save control register
-    cr = regs[PL011_CR/4];
+    cr = mmio_read32(base + PL011_CR);
     
     // Disable UART
-    regs[PL011_CR/4] = 0;
+    mmio_write32(base + PL011_CR, 0);
     
     // Wait for UART to be not busy
-    while (regs[PL011_FR/4] & PL011_FR_BUSY) {
+    while (mmio_read32(base + PL011_FR) & PL011_FR_BUSY) {
         // Spin
     }
     
     // Write line control register
-    regs[PL011_LCR_H/4] = lcr;
+    mmio_write32(base + PL011_LCR_H, lcr);
     
     // Restore control register
-    regs[PL011_CR/4] = cr;
+    mmio_write32(base + PL011_CR, cr);
     
     return 0;
 }
 
 static void pl011_enable_irq(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Enable receive and receive timeout interrupts
-    regs[PL011_IMSC/4] = PL011_INT_RX | PL011_INT_RT;
+    mmio_write32(base + PL011_IMSC, PL011_INT_RX | PL011_INT_RT);
 }
 
 static void pl011_disable_irq(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Disable all interrupts
-    regs[PL011_IMSC/4] = 0;
+    mmio_write32(base + PL011_IMSC, 0);
     
     // Clear pending interrupts
-    regs[PL011_ICR/4] = 0x7FF;
+    mmio_write32(base + PL011_ICR, 0x7FF);
 }
 
 static void pl011_flush(struct uart_softc *sc) {
-    volatile uint32_t *regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Wait for transmit FIFO to be empty and UART not busy
-    while (!(regs[PL011_FR/4] & PL011_FR_TXFE) || 
-           (regs[PL011_FR/4] & PL011_FR_BUSY)) {
+    while (!(mmio_read32(base + PL011_FR) & PL011_FR_TXFE) || 
+           (mmio_read32(base + PL011_FR) & PL011_FR_BUSY)) {
         // Spin
     }
 }
@@ -336,7 +336,6 @@ static int pl011_attach(struct device *dev) {
     struct uart_softc *sc;
     struct pl011_priv *priv;
     struct resource *res;
-    volatile uint32_t *regs;
     
     uart_puts("PL011: Attaching to device ");
     uart_puts(device_get_name(dev));
@@ -363,16 +362,16 @@ static int pl011_attach(struct device *dev) {
         return -1;
     }
     
-    regs = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     
     // Check if UART is already enabled by bootloader
-    if (regs[PL011_CR/4] & PL011_CR_UARTEN) {
+    if (mmio_read32(base + PL011_CR) & PL011_CR_UARTEN) {
         uart_puts("PL011: UART already enabled by bootloader\n");
         priv->initialized = true;
         
         // Just clear any pending interrupts
-        regs[PL011_ICR/4] = 0x7FF;
-        regs[PL011_IMSC/4] = 0;
+        mmio_write32(base + PL011_ICR, 0x7FF);
+        mmio_write32(base + PL011_IMSC, 0);
     } else {
         // Initialize hardware
         if (pl011_init(sc) != 0) {

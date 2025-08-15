@@ -15,6 +15,7 @@
 #include <string.h>
 #include <memory/kmalloc.h>
 #include <panic.h>
+#include <arch_io.h>
 
 // NS16550 UART registers (byte offsets)
 #define NS16550_RBR     0x00    // Receive Buffer Register (RO)
@@ -95,42 +96,38 @@ static struct device_match ns16550_matches[] = {
 
 static uint32_t ns16550_read_reg(struct uart_softc *sc, uint32_t reg) {
     struct ns16550_priv *priv = (struct ns16550_priv *)sc->priv;
-    volatile uint8_t *base8 = (volatile uint8_t *)sc->regs;
-    volatile uint16_t *base16 = (volatile uint16_t *)sc->regs;
-    volatile uint32_t *base32 = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t offset = reg << priv->reg_shift;
     
     switch (priv->reg_width) {
         case 1:
-            return base8[offset];
+            return mmio_read8(base + offset);
         case 2:
-            return base16[offset / 2];
+            return mmio_read16(base + offset);
         case 4:
-            return base32[offset / 4];
+            return mmio_read32(base + offset);
         default:
-            return base8[offset];
+            return mmio_read8(base + offset);
     }
 }
 
 static void ns16550_write_reg(struct uart_softc *sc, uint32_t reg, uint32_t val) {
     struct ns16550_priv *priv = (struct ns16550_priv *)sc->priv;
-    volatile uint8_t *base8 = (volatile uint8_t *)sc->regs;
-    volatile uint16_t *base16 = (volatile uint16_t *)sc->regs;
-    volatile uint32_t *base32 = (volatile uint32_t *)sc->regs;
+    uint8_t *base = (uint8_t *)sc->regs;
     uint32_t offset = reg << priv->reg_shift;
     
     switch (priv->reg_width) {
         case 1:
-            base8[offset] = val;
+            mmio_write8(base + offset, val);
             break;
         case 2:
-            base16[offset / 2] = val;
+            mmio_write16(base + offset, val);
             break;
         case 4:
-            base32[offset / 4] = val;
+            mmio_write32(base + offset, val);
             break;
         default:
-            base8[offset] = val;
+            mmio_write8(base + offset, val);
             break;
     }
 }
