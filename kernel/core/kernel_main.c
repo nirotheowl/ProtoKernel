@@ -21,7 +21,6 @@
 #include <drivers/driver.h>
 #include <drivers/uart_drivers.h>
 #include <irqchip/irqchip.h>
-#include <tests/irq_tests.h>
 // #include <tests/mmu_tests.h>
 // #include <tests/pmm_tests.h>
 // #include <tests/memory_tests.h>
@@ -36,6 +35,7 @@
 // #include <tests/slab_lookup_tests.h>
 // #include <tests/page_alloc_tests.h>
 // #include <tests/page_alloc_stress.h>
+#include <tests/irq_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;

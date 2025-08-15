@@ -188,13 +188,19 @@ static int gic_irq_set_type(struct irq_desc *desc, uint32_t type) {
 
 // Domain operations implementation
 static int gic_domain_map(struct irq_domain *d, uint32_t virq, uint32_t hwirq) {
-    (void)d; // Unused for now
+    struct gic_data *gic = (struct gic_data *)d->chip_data;
+    
+    // Check hwirq is within valid range
+    if (hwirq >= gic->nr_irqs) {
+        return -1;  // Invalid hwirq
+    }
+    
     struct irq_desc *desc = irq_to_desc(virq);
     if (!desc) return -1;
     
     // Set the chip and handler
     desc->chip = &gic_chip;
-    desc->chip_data = gic_primary;
+    desc->chip_data = gic;
     
     // Set default priority and target
     gic_set_priority(hwirq, GIC_PRIORITY_DEFAULT);
@@ -339,8 +345,25 @@ struct irq_domain *gic_create_domain(struct gic_data *gic) {
         return NULL;
     }
     
+    // Set the chip for the domain
+    domain->chip = &gic_chip;
+    domain->chip_data = gic;
+    
     gic->domain = domain;
     return domain;
+}
+
+// Send Software Generated Interrupt
+void gic_send_sgi(uint32_t sgi_id, uint32_t target_mask) {
+    struct gic_data *gic = gic_primary;
+    if (!gic || sgi_id >= GIC_MAX_SGI) return;
+    
+    // Write to GICD_SGIR to generate the interrupt
+    // Bits [25:24] = 0 (target list filter - use target_mask)
+    // Bits [23:16] = target_mask (CPU targets)
+    // Bits [3:0] = sgi_id (interrupt ID)
+    uint32_t val = (target_mask << 16) | sgi_id;
+    gic_dist_write(gic, GICD_SGIR, val);
 }
 
 // Enable GIC

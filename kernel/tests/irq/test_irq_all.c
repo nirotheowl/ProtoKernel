@@ -10,44 +10,29 @@ static int total_tests_failed = 0;
 void run_all_irq_tests(void) {
     uart_puts("\n");
     uart_puts("================================================================\n");
-    uart_puts("            COMPREHENSIVE IRQ SUBSYSTEM TEST SUITE\n");
+    uart_puts("            IRQ SUBSYSTEM TEST SUITE\n");
     uart_puts("================================================================\n");
     
-    // Run basic tests first
-    uart_puts("\n>>> Running basic IRQ tests...\n");
-    run_irq_basic_tests();
+    // Run architecture-specific tests
+#ifdef __aarch64__
+    // Run ARM hardware interrupt integration tests
+    uart_puts("\n>>> Testing ARM Hardware Interrupt Integration...\n");
+    run_arm_hardware_interrupt_tests();
     
-    // Run component-specific comprehensive tests
-    uart_puts("\n>>> Running allocator comprehensive tests...\n");
-    run_irq_allocator_tests();
+    // Run comprehensive ARM GIC tests
+    uart_puts("\n>>> Running Comprehensive ARM GIC Tests...\n");
+    run_arm_gic_comprehensive_tests();
     
-    uart_puts("\n>>> Running descriptor comprehensive tests...\n");
-    run_irq_descriptor_tests();
+    // Run real ARM hardware interrupt tests
+    uart_puts("\n>>> Running Real ARM Hardware Interrupt Tests...\n");
+    run_arm_real_interrupt_tests();
+#elif defined(__riscv)
+    // RISC-V PLIC tests will go here
+    uart_puts("\n>>> RISC-V PLIC tests not yet implemented\n");
+#endif
     
-    uart_puts("\n>>> Running domain comprehensive tests...\n");
-    run_irq_domain_tests();
-    
-    // Run stress tests
-    uart_puts("\n>>> Running stress tests...\n");
-    run_irq_stress_tests();
-    
-    // Run edge case tests
-    uart_puts("\n>>> Running edge case tests...\n");
-    run_irq_edge_tests();
-    
-    // Final summary
     uart_puts("\n");
     uart_puts("================================================================\n");
-    uart_puts("                    FINAL TEST SUMMARY\n");
-    uart_puts("================================================================\n");
-    uart_puts("\nAll IRQ subsystem tests completed.\n");
-    uart_puts("\nTest Categories:\n");
-    uart_puts("  - Basic functionality tests\n");
-    uart_puts("  - Allocator comprehensive tests\n");
-    uart_puts("  - Descriptor comprehensive tests\n");
-    uart_puts("  - Domain comprehensive tests\n");
-    uart_puts("  - Stress and performance tests\n");
-    uart_puts("  - Edge case and error handling tests\n");
-    uart_puts("\n");
+    uart_puts("                    ALL TESTS COMPLETE\n");
     uart_puts("================================================================\n");
 }

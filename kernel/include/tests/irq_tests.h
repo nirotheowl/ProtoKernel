@@ -22,4 +22,13 @@ void run_irq_edge_tests(void);
 // Run all IRQ tests
 void run_all_irq_tests(void);
 
+// ARM-specific hardware interrupt tests
+void run_arm_hardware_interrupt_tests(void);
+
+// Comprehensive ARM GIC tests
+void run_arm_gic_comprehensive_tests(void);
+
+// ARM real hardware interrupt tests
+void run_arm_real_interrupt_tests(void);
+
 #endif /* _IRQ_TESTS_H */

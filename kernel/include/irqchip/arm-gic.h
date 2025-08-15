@@ -99,6 +99,9 @@ void gic_set_config(uint32_t hwirq, uint32_t config);
 // GIC domain operations
 struct irq_domain *gic_create_domain(struct gic_data *gic);
 
+// Software Generated Interrupt
+void gic_send_sgi(uint32_t sgi_id, uint32_t target_mask);
+
 // Global GIC instance (for now, single GIC support)
 extern struct gic_data *gic_primary;
 
