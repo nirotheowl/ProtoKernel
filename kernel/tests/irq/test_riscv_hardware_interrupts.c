@@ -379,6 +379,7 @@ static void test_priority_threshold(void) {
 }
 
 // Main test runner for RISC-V hardware interrupts
+#ifdef __riscv
 void test_riscv_hardware_interrupts(void) {
     uart_puts("\n================================================================\n");
     uart_puts("        RISC-V HARDWARE INTERRUPT TEST SUITE\n");
@@ -425,9 +426,8 @@ void test_riscv_hardware_interrupts(void) {
         uart_puts("\n[FAILURE] Some hardware interrupt tests failed\n");
     }
 }
-
+#else
 // Stub for when running on non-RISC-V
-#ifndef __riscv
 void test_riscv_hardware_interrupts(void) {
     uart_puts("\n>>> RISC-V hardware interrupt tests not available on this architecture\n");
 }

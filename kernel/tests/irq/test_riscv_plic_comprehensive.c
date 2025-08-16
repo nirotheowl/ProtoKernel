@@ -418,6 +418,7 @@ static void test_boundary_conditions(void) {
 }
 
 // Main test runner for RISC-V PLIC
+#ifdef __riscv
 void test_riscv_plic_comprehensive(void) {
     uart_puts("\n================================================================\n");
     uart_puts("        RISC-V PLIC COMPREHENSIVE TEST SUITE\n");
@@ -454,9 +455,8 @@ void test_riscv_plic_comprehensive(void) {
         uart_puts("\n[FAILURE] Some PLIC tests failed\n");
     }
 }
-
+#else
 // Stub for when running on non-RISC-V
-#ifndef __riscv
 void test_riscv_plic_comprehensive(void) {
     uart_puts("\n>>> RISC-V PLIC tests not available on this architecture\n");
 }

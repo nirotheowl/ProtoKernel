@@ -1,0 +1,23 @@
+clang
+%c -std=c11
+%cpp -std=c++11
+-target
+aarch64-none-elf
+-I.
+-Ikernel/include
+-Iarch/include
+-Iarch/arm64/include
+-Iarch/riscv/include
+-Wall
+-Wextra
+-ffreestanding
+-nostdlib
+-nostartfiles
+-O2
+-g
+-march=armv8-a
+-mgeneral-regs-only
+-mcmodel=large
+-fno-pic
+-fno-pie
+-DCONFIG_PHYS_RAM_BASE=0x40000000

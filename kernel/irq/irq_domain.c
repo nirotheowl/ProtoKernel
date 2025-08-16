@@ -51,9 +51,7 @@ static struct irq_domain *irq_domain_alloc(struct device_node *node,
     if (!domain) {
         return NULL;
     }
-    
-    // Already zeroed by KM_ZERO
-    
+ 
     // Initialize common fields
     domain->ops = ops;
     domain->chip_data = host_data;

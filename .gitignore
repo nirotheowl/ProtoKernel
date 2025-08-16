@@ -55,6 +55,10 @@ tags
 TAGS
 cscope.*
 
+# Language server files
+.ccls-cache/
+compile_commands.json
+
 # Coverage and profiling
 *.gcda
 *.gcno
