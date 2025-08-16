@@ -421,7 +421,7 @@ static void test_boundary_conditions(void) {
 #ifdef __riscv
 void test_riscv_plic_comprehensive(void) {
     uart_puts("\n================================================================\n");
-    uart_puts("        RISC-V PLIC COMPREHENSIVE TEST SUITE\n");
+    uart_puts("        RISC-V PLIC COMPREHENSIVE TESTS\n");
     uart_puts("================================================================\n");
     
     tests_passed = 0;

@@ -142,17 +142,24 @@ static void test_real_timer_interrupt(void) {
     // Reset counter
     timer_fired = 0;
     
-    // Set up timer to fire soon
+    // Set up timer to fire in a short time
     uint64_t current = arch_timer_get_counter();
     uint64_t frequency = arch_timer_get_frequency();
-    uint64_t ticks = frequency / 1000;  // 1ms worth of ticks
+    uint64_t ticks = frequency / 200;  // 5ms worth of ticks (more reliable)
+    uint64_t target = current + ticks;
     
-    arch_timer_set_compare(current + ticks);
+    arch_timer_set_compare(target);
     arch_timer_enable();
     
-    // Wait for interrupt
-    int timeout = 100000;
-    while (timer_fired == 0 && timeout-- > 0) {
+    // Wait for interrupt (with timeout based on actual time, not iterations)
+    uint64_t timeout_ticks = ticks * 3;  // Wait up to 3x the expected time
+    uint64_t timeout_target = current + timeout_ticks;
+    
+    while (timer_fired == 0) {
+        uint64_t now = arch_timer_get_counter();
+        if (now > timeout_target) {
+            break;
+        }
         arch_cpu_relax();
     }
     
@@ -382,7 +389,7 @@ static void test_priority_threshold(void) {
 #ifdef __riscv
 void test_riscv_hardware_interrupts(void) {
     uart_puts("\n================================================================\n");
-    uart_puts("        RISC-V HARDWARE INTERRUPT TEST SUITE\n");
+    uart_puts("        RISC-V HARDWARE INTERRUPT TESTS\n");
     uart_puts("================================================================\n");
     
     tests_passed = 0;

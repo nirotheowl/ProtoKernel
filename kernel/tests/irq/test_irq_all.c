@@ -10,7 +10,7 @@ static int total_tests_failed = 0;
 void run_all_irq_tests(void) {
     uart_puts("\n");
     uart_puts("================================================================\n");
-    uart_puts("            IRQ SUBSYSTEM TEST SUITE\n");
+    uart_puts("            IRQ SUBSYSTEM TESTS\n");
     uart_puts("================================================================\n");
     
     // Run architecture-specific tests
