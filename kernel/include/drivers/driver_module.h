@@ -27,8 +27,6 @@ struct driver_init_entry {
 };
 
 // UART driver module macro
-// Places driver init function in special linker section for automatic initialization
-// Priority determines initialization order (lower runs first)
 #define UART_DRIVER_MODULE(initfn, prio) \
     static const struct driver_init_entry __uart_driver_##initfn \
     __attribute__((used, section(".uart_drivers"), aligned(8))) = { \
@@ -37,20 +35,20 @@ struct driver_init_entry {
         .name = #initfn \
     }
 
-// Generic driver module macro for future subsystems
-#define DRIVER_MODULE(subsys, initfn, prio) \
-    static const struct driver_init_entry __##subsys##_driver_##initfn \
-    __attribute__((used, section("." #subsys "_drivers"), aligned(8))) = { \
+// IRQCHIP driver module macro
+#define IRQCHIP_DRIVER_MODULE(initfn, prio) \
+    static const struct driver_init_entry __irqchip_driver_##initfn \
+    __attribute__((used, section(".irqchip_drivers"), aligned(8))) = { \
         .init = initfn, \
         .priority = prio, \
         .name = #initfn \
     }
 
-// IRQCHIP driver module macro
-// For interrupt controller drivers - these need to initialize very early
-#define IRQCHIP_DRIVER_MODULE(initfn, prio) \
-    static const struct driver_init_entry __irqchip_driver_##initfn \
-    __attribute__((used, section(".irqchip_drivers"), aligned(8))) = { \
+// Generic driver module macro for future subsystems
+// Priority determines initialization order (lower runs first)
+#define DRIVER_MODULE(subsys, initfn, prio) \
+    static const struct driver_init_entry __##subsys##_driver_##initfn \
+    __attribute__((used, section("." #subsys "_drivers"), aligned(8))) = { \
         .init = initfn, \
         .priority = prio, \
         .name = #initfn \
