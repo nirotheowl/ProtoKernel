@@ -4,6 +4,7 @@
 #include <memory/slab.h>
 #include <string.h>
 #include <panic.h>
+#include <uart.h>
 
 #define MAX_VIRQ        1024
 #define BITS_PER_LONG   64

@@ -31,4 +31,7 @@ void run_arm_gic_comprehensive_tests(void);
 // ARM real hardware interrupt tests
 void run_arm_real_interrupt_tests(void);
 
+// Hierarchical domain tests
+void test_hierarchical_domains(void);
+
 #endif /* _IRQ_TESTS_H */

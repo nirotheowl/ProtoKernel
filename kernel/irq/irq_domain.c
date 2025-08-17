@@ -5,6 +5,7 @@
 #include <memory/slab.h>
 #include <string.h>
 #include <panic.h>
+#include <uart.h>
 
 // Global domain list management
 static struct list_head irq_domain_list = {
@@ -144,9 +145,44 @@ struct irq_domain *irq_domain_create_hierarchy(struct irq_domain *parent,
                                               struct device_node *node,
                                               const struct irq_domain_ops *ops,
                                               void *host_data) {
-    // TODO: Implement hierarchical domain support
-    // Required for cascaded interrupt controllers (GPIO->GIC, etc)
-    return NULL;
+    struct irq_domain *domain;
+    
+    if (!parent) {
+        return NULL;  // Hierarchy domain must have a parent
+    }
+    
+    domain = irq_domain_alloc(node, ops, host_data);
+    if (!domain) {
+        return NULL;
+    }
+    
+    domain->type = DOMAIN_HIERARCHY;
+    domain->parent = parent;
+    domain->size = size;
+    domain->name = "hierarchy";
+    
+    // Allocate linear mapping array for child domain
+    domain->linear_map = kmalloc(size * sizeof(struct irq_desc *), KM_ZERO);
+    if (!domain->linear_map) {
+        kfree(domain);
+        return NULL;
+    }
+    
+    // Allocate reverse mapping cache
+    domain->revmap_size = size;
+    domain->revmap = kmalloc(size * sizeof(uint32_t), 0);
+    if (!domain->revmap) {
+        kfree(domain->linear_map);
+        kfree(domain);
+        return NULL;
+    }
+    
+    memset(domain->revmap, 0xFF, size * sizeof(uint32_t));  // Initialize to invalid
+    
+    // Register domain
+    irq_domain_register(domain);
+    
+    return domain;
 }
 
 // Create a mapping from hardware IRQ to virtual IRQ
@@ -185,7 +221,7 @@ uint32_t irq_create_mapping(struct irq_domain *domain, uint32_t hwirq) {
     spin_lock_irqsave(&domain->lock, flags);
     
     // Store mapping based on domain type
-    if (domain->type == DOMAIN_LINEAR) {
+    if (domain->type == DOMAIN_LINEAR || domain->type == DOMAIN_HIERARCHY) {
         if (hwirq >= domain->size) {
             spin_unlock_irqrestore(&domain->lock, flags);
             virq_free(virq);
@@ -199,6 +235,50 @@ uint32_t irq_create_mapping(struct irq_domain *domain, uint32_t hwirq) {
         // Update reverse map
         if (hwirq < domain->revmap_size) {
             domain->revmap[hwirq] = virq;
+        }
+        
+        // For hierarchical domains, allocate parent IRQ
+        if (domain->type == DOMAIN_HIERARCHY && domain->parent) {
+            uint32_t parent_virq;
+            uint32_t parent_hwirq;
+            
+            // Transform child hwirq to parent hwirq
+            if (domain->ops && domain->ops->child_to_parent_hwirq) {
+                parent_hwirq = domain->ops->child_to_parent_hwirq(domain, hwirq);
+            } else {
+                // Default: identity mapping
+                parent_hwirq = hwirq;
+            }
+            
+            // We need to release the lock before recursive call to avoid deadlock
+            spin_unlock_irqrestore(&domain->lock, flags);
+            
+            
+            // Create parent mapping
+            parent_virq = irq_create_mapping(domain->parent, parent_hwirq);
+            
+            // Re-acquire lock to finish setup
+            spin_lock_irqsave(&domain->lock, flags);
+            
+            if (parent_virq == IRQ_INVALID) {
+                // Clean up child mapping
+                domain->linear_map[hwirq] = NULL;
+                if (hwirq < domain->revmap_size) {
+                    domain->revmap[hwirq] = IRQ_INVALID;
+                }
+                spin_unlock_irqrestore(&domain->lock, flags);
+                virq_free(virq);
+                irq_desc_free(desc);
+                return IRQ_INVALID;
+            }
+            
+            // Link child descriptor to parent
+            struct irq_desc *parent_desc = irq_to_desc(parent_virq);
+            if (parent_desc) {
+                desc->parent_desc = parent_desc;
+                domain->parent_irq = parent_virq;
+            }
+            
         }
     }
     // TODO: Handle tree domain mapping
@@ -237,7 +317,7 @@ uint32_t irq_find_mapping(struct irq_domain *domain, uint32_t hwirq) {
     
     spin_lock_irqsave(&domain->lock, flags);
     
-    if (domain->type == DOMAIN_LINEAR) {
+    if (domain->type == DOMAIN_LINEAR || domain->type == DOMAIN_HIERARCHY) {
         if (hwirq < domain->size && domain->linear_map[hwirq]) {
             virq = domain->linear_map[hwirq]->irq;
         } else if (hwirq < domain->revmap_size) {
@@ -274,6 +354,13 @@ void irq_dispose_mapping(uint32_t virq) {
         return;
     }
     
+    // For hierarchical domains, clean up parent mapping first
+    if (domain->type == DOMAIN_HIERARCHY && desc->parent_desc) {
+        uint32_t parent_virq = desc->parent_desc->irq;
+        desc->parent_desc = NULL;
+        irq_dispose_mapping(parent_virq);
+    }
+    
     // Call domain unmap operation if provided
     if (domain->ops && domain->ops->unmap) {
         domain->ops->unmap(domain, virq);
@@ -282,7 +369,7 @@ void irq_dispose_mapping(uint32_t virq) {
     spin_lock_irqsave(&domain->lock, flags);
     
     // Remove from domain mapping
-    if (domain->type == DOMAIN_LINEAR) {
+    if (domain->type == DOMAIN_LINEAR || domain->type == DOMAIN_HIERARCHY) {
         if (hwirq < domain->size && domain->linear_map[hwirq] == desc) {
             domain->linear_map[hwirq] = NULL;
         }
@@ -297,6 +384,7 @@ void irq_dispose_mapping(uint32_t virq) {
     // Clear descriptor domain info
     desc->domain = NULL;
     desc->hwirq = IRQ_INVALID;
+    desc->parent_desc = NULL;
     
     // Free the virtual IRQ
     virq_free(virq);
@@ -317,7 +405,7 @@ void irq_domain_remove(struct irq_domain *domain) {
     }
     
     // Remove all mappings
-    if (domain->type == DOMAIN_LINEAR) {
+    if (domain->type == DOMAIN_LINEAR || domain->type == DOMAIN_HIERARCHY) {
         for (i = 0; i < domain->size; i++) {
             if (domain->linear_map[i]) {
                 irq_dispose_mapping(domain->linear_map[i]->irq);
@@ -344,7 +432,7 @@ void irq_domain_remove(struct irq_domain *domain) {
     spin_unlock_irqrestore(&irq_domain_list_lock, flags);
     
     // Free domain resources
-    if (domain->type == DOMAIN_LINEAR) {
+    if (domain->type == DOMAIN_LINEAR || domain->type == DOMAIN_HIERARCHY) {
         if (domain->linear_map) {
             kfree(domain->linear_map);
         }
@@ -398,6 +486,7 @@ int irq_domain_set_hwirq_and_chip(struct irq_domain *domain, uint32_t virq,
 // Activate through hierarchy
 int irq_domain_activate_irq(struct irq_desc *desc, bool early) {
     struct irq_domain *domain;
+    int ret = 0;
     
     if (!desc) {
         return -1;
@@ -408,11 +497,54 @@ int irq_domain_activate_irq(struct irq_desc *desc, bool early) {
         return 0;  // No domain, nothing to activate
     }
     
+    // For hierarchical domains, activate parent first
+    if (domain->type == DOMAIN_HIERARCHY && desc->parent_desc) {
+        ret = irq_domain_activate_irq(desc->parent_desc, early);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+    
+    // Then activate this level
     if (domain->ops && domain->ops->activate) {
-        return domain->ops->activate(domain, desc, early);
+        ret = domain->ops->activate(domain, desc, early);
+        if (ret < 0) {
+            // Deactivate parent on failure
+            if (domain->type == DOMAIN_HIERARCHY && desc->parent_desc &&
+                desc->parent_desc->domain && desc->parent_desc->domain->ops &&
+                desc->parent_desc->domain->ops->deactivate) {
+                desc->parent_desc->domain->ops->deactivate(desc->parent_desc->domain, 
+                                                           desc->parent_desc);
+            }
+            return ret;
+        }
     }
     
     return 0;
+}
+
+// Deactivate through hierarchy
+void irq_domain_deactivate_irq(struct irq_desc *desc) {
+    struct irq_domain *domain;
+    
+    if (!desc) {
+        return;
+    }
+    
+    domain = desc->domain;
+    if (!domain) {
+        return;
+    }
+    
+    // Deactivate this level first
+    if (domain->ops && domain->ops->deactivate) {
+        domain->ops->deactivate(domain, desc);
+    }
+    
+    // Then deactivate parent
+    if (domain->type == DOMAIN_HIERARCHY && desc->parent_desc) {
+        irq_domain_deactivate_irq(desc->parent_desc);
+    }
 }
 
 // Allocate consecutive virqs for MSI support

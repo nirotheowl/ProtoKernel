@@ -85,6 +85,11 @@ struct irq_domain_ops {
     // Hierarchy activation
     int (*activate)(struct irq_domain *d, struct irq_desc *desc, bool early);
     void (*deactivate)(struct irq_domain *d, struct irq_desc *desc);
+    
+    // Hierarchy support - transform child hwirq to parent hwirq
+    // Returns the parent hwirq for a given child hwirq
+    // If NULL, identity mapping is used (parent_hwirq = child_hwirq)
+    uint32_t (*child_to_parent_hwirq)(struct irq_domain *d, uint32_t child_hwirq);
 };
 
 // IRQ chip - hardware controller operations
@@ -219,6 +224,9 @@ int irq_domain_set_hwirq_and_chip(struct irq_domain *domain, uint32_t virq,
 
 // Activate through hierarchy
 int irq_domain_activate_irq(struct irq_desc *desc, bool early);
+
+// Deactivate through hierarchy
+void irq_domain_deactivate_irq(struct irq_desc *desc);
 
 // Domain removal
 void irq_domain_remove(struct irq_domain *domain);
