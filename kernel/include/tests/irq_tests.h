@@ -31,4 +31,7 @@ void test_riscv_plic_comprehensive(void);
 // Hierarchical domain tests
 void test_hierarchical_domains(void);
 
+// Radix tree tests (for sparse domain support)
+void test_radix_tree_basic(void);
+
 #endif /* _IRQ_TESTS_H */

@@ -17,6 +17,10 @@ void run_all_irq_tests(void) {
     uart_puts("\n>>> Testing Hierarchical Domain Support...\n");
     test_hierarchical_domains();
     
+    // Run radix tree tests (for sparse domain support)
+    uart_puts("\n>>> Testing Radix Tree (for sparse domains)...\n");
+    test_radix_tree_basic();
+    
     uart_puts("\n");
     uart_puts("================================================================\n");
     uart_puts("                    ALL TESTS COMPLETE\n");
