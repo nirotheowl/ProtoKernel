@@ -577,6 +577,7 @@ void *radix_tree_next_slot(struct radix_tree_root *root,
     unsigned int height;
     int offset;
     void *ret = NULL;
+    uint32_t orig_index = index;
 
     spin_lock(&root->lock);
 
@@ -594,38 +595,53 @@ void *radix_tree_next_slot(struct radix_tree_root *root,
 
         node = root->rnode;
         height = root->height - 1;
-
-        while (height > 0) {
+        
+        // Traverse down to leaf level
+        int skip = 0;
+        while (height > 0 && !skip) {
             offset = radix_tree_get_slot(index, height);
             child = node->slots[offset];
             if (!child) {
+                // No child at this slot, skip to next subtree
                 index = (index | ((1UL << radix_tree_get_shift(height)) - 1)) + 1;
-                if (index == 0)
-                    goto out;
-                goto restart;
+                if (index == 0) { // Wrapped around
+                    spin_unlock(&root->lock);
+                    return NULL;
+                }
+                skip = 1; // Skip to next iteration of outer loop
+            } else {
+                node = child;
+                height--;
             }
-            node = child;
-            height--;
         }
+        
+        if (skip)
+            continue;
 
+        // Check leaf level
         offset = radix_tree_get_slot(index, 0);
         if (node->slots[offset]) {
             ret = node->slots[offset];
             iter->index = index;
-            iter->next_index = index + 1;
+            // Handle wraparound when index is 0xFFFFFFFF
+            if (index == 0xFFFFFFFF) {
+                iter->next_index = 0; // This will end iteration
+            } else {
+                iter->next_index = index + 1;
+            }
             iter->node = node;
             iter->height = 0;
-            goto out;
+            spin_unlock(&root->lock);
+            return ret;
         }
 
         index++;
-restart:
-        continue;
+        if (index == 0) // Wrapped around from 0xFFFFFFFF
+            break;
     }
 
-out:
     spin_unlock(&root->lock);
-    return ret;
+    return NULL;
 }
 
 void *radix_tree_next_tagged(struct radix_tree_root *root,
@@ -634,7 +650,7 @@ void *radix_tree_next_tagged(struct radix_tree_root *root,
     struct radix_tree_node *node, *child;
     unsigned int height;
     int offset;
-    void *ret = NULL;
+    uint32_t orig_index = index;
 
     if (tag >= RADIX_TREE_TAG_MAX)
         return NULL;
@@ -652,13 +668,20 @@ void *radix_tree_next_tagged(struct radix_tree_root *root,
     while (index <= root->max_key) {
         if (index > radix_tree_maxindex(root->height))
             break;
+            
+        // Prevent infinite loop from wraparound
+        if (orig_index > 0 && index < orig_index)
+            break;
 
         node = root->rnode;
         height = root->height - 1;
-
-        while (height > 0) {
+        
+        // Traverse down the tree looking for tagged entries
+        int need_restart = 0;
+        while (height > 0 && !need_restart) {
             offset = radix_tree_get_slot(index, height);
             
+            // Look for a tagged child starting from offset
             int found = 0;
             int i;
             for (i = offset; i < RADIX_TREE_MAP_SIZE; i++) {
@@ -670,7 +693,6 @@ void *radix_tree_next_tagged(struct radix_tree_root *root,
                     if (i > offset) {
                         // Found a tagged slot after our current position
                         // Update index to point to the start of this subtree
-                        // Clear all bits at and below this height, then set the new slot
                         uint32_t mask = ~((1UL << radix_tree_get_shift(height + 1)) - 1);
                         index = (index & mask) | (i << radix_tree_get_shift(height));
                     }
@@ -681,38 +703,49 @@ void *radix_tree_next_tagged(struct radix_tree_root *root,
             }
             
             if (!found) {
-                // No tagged entries in this subtree, skip to next subtree
-                index = (index | ((1UL << radix_tree_get_shift(height + 1)) - 1)) + 1;
-                if (index == 0)
-                    goto out;
-                goto restart;
+                // No tagged entries in this subtree, skip to next subtree at higher level
+                uint32_t new_index = (index | ((1UL << radix_tree_get_shift(height + 1)) - 1)) + 1;
+                if (new_index == 0 || new_index < index) { // Check for wraparound
+                    spin_unlock(&root->lock);
+                    return NULL;
+                }
+                index = new_index;
+                need_restart = 1;
+            } else {
+                height--;
             }
-            
-            height--;
         }
+        
+        if (need_restart)
+            continue;
 
+        // At leaf level, find tagged entry
         for (offset = radix_tree_get_slot(index, 0); 
              offset < RADIX_TREE_MAP_SIZE; offset++) {
             if (tag_get(node, tag, offset) && node->slots[offset]) {
-                ret = node->slots[offset];
                 iter->index = (index & ~RADIX_TREE_MAP_MASK) | offset;
-                iter->next_index = iter->index + 1;
+                // Handle wraparound when index is 0xFFFFFFFF
+                if (iter->index == 0xFFFFFFFF) {
+                    iter->next_index = 0; // This will end iteration
+                } else {
+                    iter->next_index = iter->index + 1;
+                }
                 iter->node = node;
                 iter->height = 0;
-                goto out;
+                void *ret = node->slots[offset];
+                spin_unlock(&root->lock);
+                return ret;
             }
         }
 
+        // No tagged entry found in this leaf, move to next
         index = (index | RADIX_TREE_MAP_MASK) + 1;
-        if (index == 0)
+        if (index == 0) // Wrapped around
             break;
-restart:
-        continue;
     }
 
-out:
     spin_unlock(&root->lock);
-    return ret;
+    return NULL;
 }
 
 unsigned int radix_tree_gang_lookup(struct radix_tree_root *root,

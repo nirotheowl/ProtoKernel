@@ -33,6 +33,10 @@ void test_radix_tree_all(void) {
     uart_puts("------------------------\n");
     test_radix_tree_stress();
     
+    uart_puts("\nEdge Cases\n");
+    uart_puts("----------\n");
+    test_radix_tree_edge();
+    
     uart_puts("\n");
     uart_puts("========================================\n");
     uart_puts("   ALL RADIX TREE TESTS COMPLETED!     \n");
