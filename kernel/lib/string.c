@@ -10,7 +10,6 @@
 extern void uart_puts(const char *str);
 extern void uart_puthex(unsigned long val);
 
-// GCC may generate calls to memcpy even with -ffreestanding
 void *memcpy(void *dest, const void *src, size_t n) {
     unsigned char *d = dest;
     const unsigned char *s = src;
@@ -26,7 +25,6 @@ void *memcpy(void *dest, const void *src, size_t n) {
     return dest;
 }
 
-// GCC may also generate calls to memset
 void *memset(void *s, int c, size_t n) {
     unsigned char *p = s;
     while (n--) {
@@ -35,7 +33,6 @@ void *memset(void *s, int c, size_t n) {
     return s;
 }
 
-// GCC may generate calls to memmove
 void *memmove(void *dest, const void *src, size_t n) {
     unsigned char *d = dest;
     const unsigned char *s = src;
@@ -142,7 +139,7 @@ char* strchr(const char* s, int c) {
     return NULL;
 }
 
-/* Simple number to string conversion helper */
+// Simple number to string conversion helper
 int num_to_str(char *buf, size_t size, unsigned long num) {
     char temp[32];
     int i = 0, j = 0;
@@ -174,7 +171,7 @@ int num_to_str(char *buf, size_t size, unsigned long num) {
     return j;
 }
 
-/* Basic snprintf - only supports %zu, %d, and plain strings */
+// Basic snprintf - only supports %zu, %d, and plain strings 
 int snprintf(char *buf, size_t size, const char *fmt, ...) {
     __builtin_va_list args;
     __builtin_va_start(args, fmt);
@@ -186,13 +183,13 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
         if (*p == '%') {
             p++;
             if (*p == 'z' && *(p + 1) == 'u') {
-                /* Handle %zu */
+                // Handle %zu 
                 size_t val = __builtin_va_arg(args, size_t);
                 int len = num_to_str(buf + i, size - i, val);
                 i += len;
                 p += 2;
             } else if (*p == 'd') {
-                /* Handle %d */
+                // Handle %d
                 int val = __builtin_va_arg(args, int);
                 if (val < 0 && i < size - 1) {
                     buf[i++] = '-';
@@ -202,11 +199,11 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
                 i += len;
                 p++;
             } else if (*p == '%') {
-                /* Handle %% */
+                // Handle %% 
                 buf[i++] = '%';
                 p++;
             } else {
-                /* Unknown format, just copy */
+                // Unknown format, just copy
                 buf[i++] = '%';
                 if (*p && i < size - 1) {
                     buf[i++] = *p++;
