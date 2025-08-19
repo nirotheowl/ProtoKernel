@@ -13,13 +13,16 @@ void run_all_irq_tests(void) {
     uart_puts("            IRQ SUBSYSTEM TESTS\n");
     uart_puts("================================================================\n");
     
-    // Run hierarchical domain tests (architecture-independent)
-    uart_puts("\n>>> Testing Hierarchical Domain Support...\n");
+    // Comment out old tests - focusing on tree domain testing
+    // uart_puts("\n>>> Testing Hierarchical Domain Support...\n");
     test_hierarchical_domains();
     
-    // Run radix tree tests (for sparse domain support)
-    uart_puts("\n>>> Testing Radix Tree (for sparse domains)...\n");
+    // uart_puts("\n>>> Testing Radix Tree (for sparse domains)...\n");
     test_radix_tree_all();
+    
+    // Run comprehensive tree domain tests
+    uart_puts("\n>>> Testing Tree Domain Support...\n");
+    test_tree_domains_comprehensive();
     
     uart_puts("\n");
     uart_puts("================================================================\n");

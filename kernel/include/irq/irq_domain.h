@@ -234,4 +234,14 @@ void irq_domain_remove(struct irq_domain *domain);
 // Find domain by device tree node
 struct irq_domain *irq_find_host(struct device_node *node);
 
+// ============ Range Allocation (MSI Support) ============
+
+// Allocate a consecutive hwirq range for MSI
+int irq_domain_alloc_hwirq_range(struct irq_domain *domain, uint32_t count,
+                                 uint32_t *hwirq_base);
+
+// Free a hwirq range
+void irq_domain_free_hwirq_range(struct irq_domain *domain,
+                                 uint32_t hwirq_base, uint32_t count);
+
 #endif /* _IRQ_DOMAIN_H */

@@ -3,9 +3,13 @@
 #include <irq/irq_alloc.h>
 #include <memory/kmalloc.h>
 #include <memory/slab.h>
+#include <lib/radix_tree.h>
 #include <string.h>
 #include <panic.h>
 #include <uart.h>
+
+// Special marker for reserved but unmapped hwirq slots
+#define HWIRQ_RESERVED_MARKER ((void *)0x1)
 
 // Global domain list management
 static struct list_head irq_domain_list = {
@@ -134,9 +138,33 @@ struct irq_domain *irq_domain_create_linear(struct device_node *node,
 struct irq_domain *irq_domain_create_tree(struct device_node *node,
                                          const struct irq_domain_ops *ops,
                                          void *host_data) {
-    // TODO: Implement radix tree based sparse mapping
-    // Required for PCI MSI support
-    return NULL;
+    struct irq_domain *domain;
+    
+    domain = irq_domain_alloc(node, ops, host_data);
+    if (!domain) {
+        return NULL;
+    }
+    
+    domain->type = DOMAIN_TREE;
+    domain->name = "tree";
+    
+    // Allocate radix tree for sparse mapping
+    domain->tree = kmalloc(sizeof(struct radix_tree_root), KM_ZERO);
+    if (!domain->tree) {
+        kfree(domain);
+        return NULL;
+    }
+    
+    // Initialize radix tree
+    radix_tree_init(domain->tree);
+    
+    // Set max_irq to a reasonable limit for sparse mappings
+    domain->max_irq = 0xFFFFFF; // 16M should be enough
+    
+    // Register the domain
+    irq_domain_register(domain);
+    
+    return domain;
 }
 
 // Create a hierarchy domain for cascaded controllers
@@ -236,9 +264,34 @@ uint32_t irq_create_mapping(struct irq_domain *domain, uint32_t hwirq) {
         if (hwirq < domain->revmap_size) {
             domain->revmap[hwirq] = virq;
         }
+    } else if (domain->type == DOMAIN_TREE) {
+        // Check if slot is reserved or already occupied
+        void *existing = radix_tree_lookup(domain->tree, hwirq);
+        if (existing == HWIRQ_RESERVED_MARKER) {
+            // Replace reserved marker with actual descriptor
+            radix_tree_delete(domain->tree, hwirq);
+            ret = radix_tree_insert(domain->tree, hwirq, desc);
+        } else if (existing != NULL) {
+            // Already occupied by real descriptor - shouldn't happen due to earlier check
+            spin_unlock_irqrestore(&domain->lock, flags);
+            virq_free(virq);
+            irq_desc_free(desc);
+            return IRQ_INVALID;
+        } else {
+            // Empty slot, insert normally
+            ret = radix_tree_insert(domain->tree, hwirq, desc);
+        }
         
-        // For hierarchical domains, allocate parent IRQ
-        if (domain->type == DOMAIN_HIERARCHY && domain->parent) {
+        if (ret < 0) {
+            spin_unlock_irqrestore(&domain->lock, flags);
+            virq_free(virq);
+            irq_desc_free(desc);
+            return IRQ_INVALID;
+        }
+    }
+    
+    // For hierarchical domains, allocate parent IRQ
+    if (domain->type == DOMAIN_HIERARCHY && domain->parent) {
             uint32_t parent_virq;
             uint32_t parent_hwirq;
             
@@ -278,10 +331,7 @@ uint32_t irq_create_mapping(struct irq_domain *domain, uint32_t hwirq) {
                 desc->parent_desc = parent_desc;
                 domain->parent_irq = parent_virq;
             }
-            
-        }
     }
-    // TODO: Handle tree domain mapping
     
     // Update descriptor
     desc->hwirq = hwirq;
@@ -323,8 +373,13 @@ uint32_t irq_find_mapping(struct irq_domain *domain, uint32_t hwirq) {
         } else if (hwirq < domain->revmap_size) {
             virq = domain->revmap[hwirq];
         }
+    } else if (domain->type == DOMAIN_TREE) {
+        // Look up in radix tree
+        struct irq_desc *desc = radix_tree_lookup(domain->tree, hwirq);
+        if (desc && desc != HWIRQ_RESERVED_MARKER) {
+            virq = desc->irq;
+        }
     }
-    // TODO: Handle tree domain mapping
     
     spin_unlock_irqrestore(&domain->lock, flags);
     
@@ -376,8 +431,10 @@ void irq_dispose_mapping(uint32_t virq) {
         if (hwirq < domain->revmap_size) {
             domain->revmap[hwirq] = IRQ_INVALID;
         }
+    } else if (domain->type == DOMAIN_TREE) {
+        // Remove from radix tree
+        radix_tree_delete(domain->tree, hwirq);
     }
-    // TODO: Handle tree domain mapping
     
     spin_unlock_irqrestore(&domain->lock, flags);
     
@@ -411,8 +468,19 @@ void irq_domain_remove(struct irq_domain *domain) {
                 irq_dispose_mapping(domain->linear_map[i]->irq);
             }
         }
+    } else if (domain->type == DOMAIN_TREE) {
+        // For tree domains, we need to iterate through all mappings
+        // This is less efficient but necessary for sparse mappings
+        struct radix_tree_iter iter = {0};
+        void *slot;
+        
+        while ((slot = radix_tree_next_slot(domain->tree, &iter, 0)) != NULL) {
+            struct irq_desc *desc = slot;
+            if (desc) {
+                irq_dispose_mapping(desc->irq);
+            }
+        }
     }
-    // TODO: Handle tree domain mapping
     
     // Remove from global list
     spin_lock_irqsave(&irq_domain_list_lock, flags);
@@ -438,6 +506,10 @@ void irq_domain_remove(struct irq_domain *domain) {
         }
         if (domain->revmap) {
             kfree(domain->revmap);
+        }
+    } else if (domain->type == DOMAIN_TREE) {
+        if (domain->tree) {
+            kfree(domain->tree);
         }
     }
     
@@ -625,4 +697,180 @@ void irq_set_default_domain(struct irq_domain *domain) {
     spin_lock_irqsave(&irq_domain_list_lock, flags);
     irq_default_domain = domain;
     spin_unlock_irqrestore(&irq_domain_list_lock, flags);
+}
+
+// ============ Range Allocation Functions for MSI Support ============
+
+// Find a free hwirq range in a tree domain
+static int tree_domain_find_free_range(struct irq_domain *domain, 
+                                       uint32_t count, uint32_t *hwirq_base) {
+    struct radix_tree_iter iter = {0};
+    uint32_t start = 0;
+    uint32_t consecutive = 0;
+    uint32_t current = 0;
+    void *slot;
+    unsigned long flags;
+    
+    if (!domain || domain->type != DOMAIN_TREE || !hwirq_base || count == 0) {
+        return -1;
+    }
+    
+    spin_lock_irqsave(&domain->lock, flags);
+    
+    // Simple algorithm: find first gap of 'count' consecutive hwirqs
+    // Start from 0 and look for gaps in the radix tree
+    while (current < domain->max_irq) {
+        slot = radix_tree_lookup(domain->tree, current);
+        if (!slot) {
+            // Found a free slot
+            if (consecutive == 0) {
+                start = current;
+            }
+            consecutive++;
+            
+            if (consecutive >= count) {
+                // Found enough consecutive free slots
+                *hwirq_base = start;
+                spin_unlock_irqrestore(&domain->lock, flags);
+                return 0;
+            }
+        } else {
+            // Slot is occupied, reset counter
+            consecutive = 0;
+        }
+        current++;
+    }
+    
+    spin_unlock_irqrestore(&domain->lock, flags);
+    return -1; // No suitable range found
+}
+
+// Reserve a hwirq range in a tree domain (mark as allocated)
+static int tree_domain_reserve_range(struct irq_domain *domain,
+                                     uint32_t hwirq_base, uint32_t count) {
+    uint32_t i;
+    int ret;
+    unsigned long flags;
+    
+    if (!domain || domain->type != DOMAIN_TREE || count == 0) {
+        return -1;
+    }
+    
+    spin_lock_irqsave(&domain->lock, flags);
+    
+    // First check if any slot in the range is already occupied
+    for (i = 0; i < count; i++) {
+        void *existing = radix_tree_lookup(domain->tree, hwirq_base + i);
+        if (existing != NULL) {
+            spin_unlock_irqrestore(&domain->lock, flags);
+            return -1; // Range not available
+        }
+    }
+    
+    // Insert reserved markers to mark range as allocated
+    for (i = 0; i < count; i++) {
+        ret = radix_tree_insert(domain->tree, hwirq_base + i, HWIRQ_RESERVED_MARKER);
+        if (ret < 0) {
+            // Rollback on failure
+            while (i > 0) {
+                i--;
+                radix_tree_delete(domain->tree, hwirq_base + i);
+            }
+            spin_unlock_irqrestore(&domain->lock, flags);
+            return -1;
+        }
+    }
+    
+    spin_unlock_irqrestore(&domain->lock, flags);
+    return 0;
+}
+
+// Release a reserved hwirq range in a tree domain
+static void tree_domain_release_range(struct irq_domain *domain,
+                                      uint32_t hwirq_base, uint32_t count) {
+    uint32_t i;
+    unsigned long flags;
+    
+    if (!domain || domain->type != DOMAIN_TREE || count == 0) {
+        return;
+    }
+    
+    spin_lock_irqsave(&domain->lock, flags);
+    
+    // Remove reserved markers (but preserve actual IRQ descriptors)
+    for (i = 0; i < count; i++) {
+        void *entry = radix_tree_lookup(domain->tree, hwirq_base + i);
+        if (entry == HWIRQ_RESERVED_MARKER) {
+            radix_tree_delete(domain->tree, hwirq_base + i);
+        }
+        // If it's a real IRQ descriptor, leave it alone
+    }
+    
+    spin_unlock_irqrestore(&domain->lock, flags);
+}
+
+// Public API: Allocate a consecutive hwirq range for MSI
+int irq_domain_alloc_hwirq_range(struct irq_domain *domain, uint32_t count,
+                                 uint32_t *hwirq_base) {
+    if (!domain || !hwirq_base || count == 0) {
+        return -1;
+    }
+    
+    if (domain->type == DOMAIN_TREE) {
+        // Find a free range
+        int result = tree_domain_find_free_range(domain, count, hwirq_base);
+        if (result == 0) {
+            // Reserve the range to mark it as allocated
+            result = tree_domain_reserve_range(domain, *hwirq_base, count);
+            if (result < 0) {
+                // Failed to reserve, range is not allocated
+                return -1;
+            }
+        }
+        return result;
+    }
+    
+    // For linear domains, find consecutive free slots
+    if (domain->type == DOMAIN_LINEAR) {
+        uint32_t i, j;
+        uint32_t consecutive = 0;
+        uint32_t start = 0;
+        unsigned long flags;
+        
+        spin_lock_irqsave(&domain->lock, flags);
+        
+        for (i = 0; i < domain->size; i++) {
+            if (!domain->linear_map[i]) {
+                if (consecutive == 0) {
+                    start = i;
+                }
+                consecutive++;
+                
+                if (consecutive >= count) {
+                    *hwirq_base = start;
+                    spin_unlock_irqrestore(&domain->lock, flags);
+                    return 0;
+                }
+            } else {
+                consecutive = 0;
+            }
+        }
+        
+        spin_unlock_irqrestore(&domain->lock, flags);
+    }
+    
+    return -1;
+}
+
+// Public API: Free a hwirq range
+void irq_domain_free_hwirq_range(struct irq_domain *domain,
+                                uint32_t hwirq_base, uint32_t count) {
+    if (!domain || count == 0) {
+        return;
+    }
+    
+    if (domain->type == DOMAIN_TREE) {
+        tree_domain_release_range(domain, hwirq_base, count);
+    }
+    // For linear domains, disposal is handled by irq_dispose_mapping
 }
