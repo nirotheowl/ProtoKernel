@@ -170,8 +170,8 @@ static int ns16550_init(struct uart_softc *sc) {
     // Enable modem control
     ns16550_write_reg(sc, NS16550_MCR, NS16550_MCR_DTR | NS16550_MCR_RTS);
     
-    // Set default baud rate (115200)
-    return ns16550_set_baudrate(sc, 115200);
+    // Set default baud rate (115200, or 1500000 on the ODroid M2)
+    return ns16550_set_baudrate(sc, 1500000);
 }
 
 static void ns16550_putc(struct uart_softc *sc, char c) {
@@ -447,70 +447,6 @@ static int ns16550_attach(struct device *dev) {
         kfree(priv);
         kfree(sc);
         return -1;
-    }
-    
-    // HARDWARE WORKAROUND: Critical synchronization requirement
-    // 
-    // The NS16550 UART (at least on RK3588/ODroid M2) has an undocumented
-    // requirement: before the first register access in ns16550_init(), we MUST:
-    // 1. Wait for the transmit buffer to be empty (check LSR THRE bit)
-    // 2. Write at least one byte to the transmit holding register
-    //
-    // Without this exact sequence, the first register write in ns16550_init()
-    // causes the system to hang. This may be related to:
-    // - Internal UART state machine requirements
-    // - Hardware FIFO initialization needs
-    // - Bus/interconnect synchronization requirements
-    // - Undocumented silicon errata
-    //
-    // Testing confirms:
-    // - Just reading LSR is NOT sufficient
-    // - Just waiting for THRE is NOT sufficient  
-    // - We MUST both wait AND write for the UART to work correctly
-    //
-    if (sc->regs && priv) {
-        uint8_t *base = (uint8_t *)sc->regs;
-        uint32_t lsr_offset = NS16550_LSR << priv->reg_shift;
-        uint32_t thr_offset = NS16550_THR << priv->reg_shift;
-        uint32_t lsr_val;
-        
-        // Step 1: Wait for transmit buffer to be empty
-        // Must use proper width-specific MMIO functions for compatibility
-        do {
-            switch (priv->reg_width) {
-                case 1:
-                    lsr_val = mmio_read8(base + lsr_offset);
-                    break;
-                case 2:
-                    lsr_val = mmio_read16(base + lsr_offset);
-                    break;
-                case 4:
-                    lsr_val = mmio_read32(base + lsr_offset);
-                    break;
-                default:
-                    lsr_val = mmio_read8(base + lsr_offset);
-                    break;
-            }
-        } while (!(lsr_val & NS16550_LSR_THRE));
-        
-        // Step 2: Write a dummy byte (required for synchronization)
-        switch (priv->reg_width) {
-            case 1:
-                mmio_write8(base + thr_offset, 0x00);
-                break;
-            case 2:
-                mmio_write16(base + thr_offset, 0x00);
-                break;
-            case 4:
-                mmio_write32(base + thr_offset, 0x00);
-                break;
-            default:
-                mmio_write8(base + thr_offset, 0x00);
-                break;
-        }
-        
-        // Ensure the write completes before continuing
-        arch_io_barrier();
     }
     
     // Initialize hardware
