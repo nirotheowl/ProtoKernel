@@ -27,14 +27,14 @@
 // #include <tests/fdt_tests.h>
 // #include <tests/fdt_mgr_tests.h>
 // #include <tests/test_dmap.h>
-// #include <tests/slab_tests.h>
-// #include <tests/slab_edge_tests.h>
-// #include <tests/slab_destruction_tests.h>
-// #include <tests/kmalloc_tests.h>
-// #include <tests/malloc_types_tests.h>
-// #include <tests/slab_lookup_tests.h>
-// #include <tests/page_alloc_tests.h>
-// #include <tests/page_alloc_stress.h>
+#include <tests/slab_tests.h>
+#include <tests/slab_edge_tests.h>
+#include <tests/slab_destruction_tests.h>
+#include <tests/kmalloc_tests.h>
+#include <tests/malloc_types_tests.h>
+#include <tests/slab_lookup_tests.h>
+#include <tests/page_alloc_tests.h>
+#include <tests/page_alloc_stress.h>
 // #include <tests/irq_tests.h>
 
 // External symbols from linker script
@@ -164,6 +164,28 @@ void kernel_main(void* dtb) {
     // device_pool_print_stats();
    
     // KERNEL TESTS START HERE!
+    
+    
+    // Page allocator tests first (lowest level)
+    // page_alloc_run_tests();
+    
+    // Slab allocator tests (built on page allocator)
+    // run_slab_tests();
+    
+    // run_slab_edge_tests();
+    
+    // run_slab_destruction_tests();
+    
+    // run_slab_lookup_tests();
+    
+    // kmalloc tests (built on slab allocator)
+    run_kmalloc_tests();
+    
+    // Malloc types tests
+    run_malloc_types_tests();
+    
+    // Stress tests last (most intensive)
+    page_alloc_stress_tests();  
     
     // Run all IRQ subsystem tests
     // run_all_irq_tests();

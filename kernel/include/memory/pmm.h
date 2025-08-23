@@ -15,8 +15,27 @@
 #define PMM_PAGE_SIZE 4096
 #define PMM_PAGE_SHIFT 12
 
+// Maximum number of memory regions we can handle
+// Modern systems can have many regions due to:
+// - NUMA nodes
+// - Memory holes for MMIO
+// - Firmware reserved areas
+// - Hot-pluggable memory
+#define PMM_MAX_REGIONS 64
+
 // Forward declaration - actual definition in memmap.h
 typedef struct mem_region mem_region_t;
+
+// Physical memory region structure
+typedef struct pmm_region {
+    uint64_t base;           // Base physical address
+    uint64_t size;           // Size in bytes
+    uint64_t *bitmap;        // Bitmap for this region
+    size_t bitmap_size;      // Size of bitmap in bytes
+    size_t total_pages;      // Total pages in this region
+    size_t free_pages;       // Free pages in this region
+    struct pmm_region *next; // Next region in list
+} pmm_region_t;
 
 // Statistics
 typedef struct pmm_stats {
