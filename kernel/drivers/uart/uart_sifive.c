@@ -350,7 +350,7 @@ static struct driver sifive_driver = {
     .matches = sifive_matches,
     .num_matches = sizeof(sifive_matches) / sizeof(sifive_matches[0]),
     .priority = 10,
-    .priv_size = sizeof(struct uart_softc) + sizeof(struct sifive_priv),
+    .priv_size = 0,  // Driver allocates its own memory in attach
     .flags = DRIVER_FLAG_BUILTIN | DRIVER_FLAG_EARLY,
 };
 

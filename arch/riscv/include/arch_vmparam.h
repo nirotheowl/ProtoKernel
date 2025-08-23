@@ -24,7 +24,7 @@
 #define L1_SIZE                 (1UL << 30)  // 1GB
 
 // Kernel pre-mapped region size (set up by boot.S)
-// RISC-V boot.S maps 16MB for the kernel
-#define ARCH_KERNEL_PREMAPPED_SIZE  0x1000000ULL  /* 16MB */
+// RISC-V boot.S maps 128MB for the kernel
+#define ARCH_KERNEL_PREMAPPED_SIZE  0x8000000ULL  /* 128MB */
 
 #endif /* _ARCH_VMPARAM_H_ */

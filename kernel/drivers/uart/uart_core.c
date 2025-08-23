@@ -42,8 +42,8 @@ static int uart_register_device(struct uart_softc *sc) {
         return -1;
     }
     
-    // Add to device list (simple linked list for now)
-    sc->priv = uart_devices;
+    // Add to device list using the next pointer
+    sc->next = uart_devices;
     uart_devices = sc;
     uart_count++;
     
@@ -56,10 +56,13 @@ int uart_softc_init(struct uart_softc *sc, struct device *dev, const struct uart
         return -1;
     }
     
-    // Initialize base fields
+    
+    // Initialize base fields - do each one separately to avoid alignment issues
     sc->dev = dev;
     sc->class = class;
     sc->regs = NULL;
+    sc->priv = NULL;
+    sc->next = NULL;
     sc->clock_freq = 0;
     sc->baudrate = 115200;  // Default baud rate
     sc->databits = 8;
@@ -265,7 +268,7 @@ void uart_list_devices(void) {
     uart_puts("UART Devices:\n");
     uart_puts("-------------\n");
     
-    for (sc = uart_devices; sc; sc = (struct uart_softc *)sc->priv) {
+    for (sc = uart_devices; sc; sc = sc->next) {
         uart_print_info(sc);
     }
     

@@ -32,30 +32,45 @@ bool fdt_mgr_init(void *dtb_phys) {
     uint32_t totalsize;
     
     if (!dtb_phys) {
-        // uart_puts("FDT_MGR: No DTB provided\n");
         return false;
     }
     
     /* Save physical address */
     fdt_state.phys_addr = dtb_phys;
     
-    // uart_puts("FDT_MGR: DTB physical address: ");
-    // uart_puthex((uint64_t)dtb_phys);
-    // uart_puts("\n");
+    /* Since we're running with MMU enabled and the DTB was copied to after
+     * kernel end, we need to use virtual address to access it */
+    void *dtb_virt;
+    extern char _kernel_end;
+    uint64_t kernel_end_phys = (uint64_t)&_kernel_end - KERNEL_VIRT_BASE + kernel_phys_base;
     
-    /* Map temporarily to read header (using identity mapping) */
-    header = (fdt_header_t *)dtb_phys;
+    /* Architecture-independent approach:
+     * The boot code should have ensured the DTB is in a mappable location.
+     * If it's within the kernel's pre-mapped region, we can convert to virtual.
+     * Otherwise, we'll need to map it later. */
     
-    // uart_puts("FDT_MGR: Reading magic at ");
-    // uart_puthex((uint64_t)&header->magic);
-    // uart_puts(": ");
-    // uart_puthex(header->magic);
-    // uart_puts(" (expected ");
-    // uart_puthex(FDT_MAGIC);
-    // uart_puts(")\n");
+    /* Check if DTB is within the kernel's pre-mapped region */
+    if ((uint64_t)dtb_phys >= kernel_phys_base && 
+        (uint64_t)dtb_phys < (kernel_phys_base + ARCH_KERNEL_PREMAPPED_SIZE)) {
+        /* DTB is in pre-mapped region, convert to virtual */
+        dtb_virt = (void *)PHYS_TO_VIRT((uint64_t)dtb_phys);
+        header = (fdt_header_t *)dtb_virt;
+        
+        /* We can safely access it now */
+        fdt_state.virt_addr = dtb_virt;
+        fdt_state.is_mapped = true;
+    } else {
+        /* Can't access it yet - just save the address */
+        fdt_state.virt_addr = NULL;
+        fdt_state.is_mapped = false;
+        return true;  /* Defer validation until fdt_mgr_map_virtual() */
+    }
+    
+    /* Try to read magic - this might fault if address is bad */
+    uint32_t magic = header->magic;
     
     /* Validate magic number */
-    if (fdt32_to_cpu(header->magic) != FDT_MAGIC) {
+    if (fdt32_to_cpu(magic) != FDT_MAGIC) {
         // uart_puts("FDT_MGR: Invalid FDT magic after byte swap: ");
         // uart_puthex(fdt32_to_cpu(header->magic));
         // uart_puts("\n");
@@ -142,7 +157,8 @@ bool fdt_mgr_map_virtual(void) {
         
         /* Validate the mapping by checking magic number */
         fdt_header_t *header = (fdt_header_t *)fdt_state.virt_addr;
-        if (fdt32_to_cpu(header->magic) != FDT_MAGIC) {
+        uint32_t magic = header->magic;
+        if (fdt32_to_cpu(magic) != FDT_MAGIC) {
             uart_puts("FDT_MGR: FDT validation failed\n");
             fdt_state.is_mapped = false;
             return false;

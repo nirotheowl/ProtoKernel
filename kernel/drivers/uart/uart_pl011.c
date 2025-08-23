@@ -443,7 +443,7 @@ static struct driver pl011_driver = {
     .matches = pl011_matches,
     .num_matches = sizeof(pl011_matches) / sizeof(pl011_matches[0]),
     .priority = 10,
-    .priv_size = sizeof(struct uart_softc) + sizeof(struct pl011_priv),
+    .priv_size = 0,  // Driver allocates its own memory in attach
     .flags = DRIVER_FLAG_BUILTIN | DRIVER_FLAG_EARLY,
 };
 

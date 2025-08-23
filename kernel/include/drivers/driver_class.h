@@ -44,13 +44,15 @@ struct uart_softc {
     struct device      *dev;           // Associated device
     const struct uart_class *class;    // UART class operations
     void              *regs;           // Memory-mapped registers
+    void              *priv;           // Driver private data
+    struct uart_softc *next;           // Next UART in global list
     uint32_t          clock_freq;      // Input clock frequency
     uint32_t          baudrate;        // Current baud rate
+    uint32_t          flags;           // Status flags
+    uart_parity_t     parity;          // Parity mode
     uint8_t           databits;        // Data bits (5-9)
     uint8_t           stopbits;        // Stop bits (1-2)
-    uart_parity_t     parity;          // Parity mode
-    uint32_t          flags;           // Status flags
-    void              *priv;           // Driver private data
+    uint8_t           _pad[2];         // Padding for alignment
 };
 
 // UART class operations

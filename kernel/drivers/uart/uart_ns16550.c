@@ -14,6 +14,7 @@
 #include <uart.h>
 #include <string.h>
 #include <memory/kmalloc.h>
+#include <memory/vmm.h>
 #include <panic.h>
 #include <arch_io.h>
 
@@ -84,6 +85,9 @@ static struct ns16550_priv dw_apb_config = {
 
 static int ns16550_set_baudrate(struct uart_softc *sc, uint32_t baud);
 
+// Forward declaration
+static void ns16550_sync_delay(void);
+
 static struct device_match ns16550_matches[] = {
     { MATCH_COMPATIBLE, "ns16550", NULL },
     { MATCH_COMPATIBLE, "ns16550a", NULL },
@@ -92,6 +96,7 @@ static struct device_match ns16550_matches[] = {
     { MATCH_COMPATIBLE, "16550", NULL },
     { MATCH_COMPATIBLE, "16750", NULL },
     { MATCH_COMPATIBLE, "snps,dw-apb-uart", &dw_apb_config },
+    { MATCH_COMPATIBLE, "rockchip,rk3588-uart", &dw_apb_config },  // RK3588 uses DW APB UART
 };
 
 static uint32_t ns16550_read_reg(struct uart_softc *sc, uint32_t reg) {
@@ -134,6 +139,20 @@ static void ns16550_write_reg(struct uart_softc *sc, uint32_t reg, uint32_t val)
 
 static int ns16550_init(struct uart_softc *sc) {
     struct ns16550_priv *priv = (struct ns16550_priv *)sc->priv;
+    
+    if (!priv) {
+        uart_puts("NS16550: ERROR - priv is NULL!\n");
+        return -1;
+    }
+    
+    // Debug: Show what we're about to access
+    // uart_puts("NS16550: Initializing UART at ");
+    // uart_puthex((uint64_t)sc->regs);
+    // uart_puts(" (reg_shift=");
+    // uart_putdec(priv->reg_shift);
+    // uart_puts(", reg_width=");
+    // uart_putdec(priv->reg_width);
+    // uart_puts(")\n");
     
     // Disable interrupts
     ns16550_write_reg(sc, NS16550_IER, 0x00);
@@ -307,12 +326,14 @@ static int ns16550_probe(struct device *dev) {
     
     // Get device compatible string
     compat = device_get_compatible(dev);
+    
     if (!compat) {
         return PROBE_SCORE_NONE;
     }
     
     // Check for exact matches
-    for (int i = 0; i < sizeof(ns16550_matches) / sizeof(ns16550_matches[0]); i++) {
+    size_t num_matches = sizeof(ns16550_matches) / sizeof(ns16550_matches[0]);
+    for (size_t i = 0; i < num_matches; i++) {
         if (strcmp(compat, ns16550_matches[i].value) == 0) {
             return PROBE_SCORE_EXACT;
         }
@@ -320,10 +341,33 @@ static int ns16550_probe(struct device *dev) {
     
     // Check for partial matches
     if (strstr(compat, "16550") || strstr(compat, "8250")) {
+        // uart_puts("NS16550: Generic match found!\n");
+        arch_io_barrier();  // Ensure all operations complete
         return PROBE_SCORE_GENERIC;
     }
     
+    // uart_puts("NS16550: No match, returning NONE\n");
+    arch_io_barrier();  // Ensure all operations complete
     return PROBE_SCORE_NONE;
+}
+
+// Synchronization function to ensure UART is ready
+static void ns16550_sync_delay(void) {
+    // The real issue: when debug prints work, they're touching the UART
+    // through the hardcoded address (0xFFFF0000FEB50000).
+    // We need to ensure any pending operations on that mapping complete
+    // before we access the UART through the devmap address.
+    
+    // Flush all pending writes and ensure ordering
+    arch_io_barrier();
+    
+    // Small delay to ensure hardware settles
+    for (volatile int i = 0; i < 1000; i++) {
+        __asm__ volatile("nop");
+    }
+    
+    // Final barrier to ensure all operations complete
+    arch_io_barrier();
 }
 
 static int ns16550_attach(struct device *dev) {
@@ -333,18 +377,24 @@ static int ns16550_attach(struct device *dev) {
     const struct device_match *match = NULL;
     const char *compat;
     
-    
-    // Allocate software context
-    sc = kmalloc(sizeof(*sc) + sizeof(*priv), KM_ZERO);
+    // Allocate software context with proper alignment
+    // Allocate sc and priv separately to avoid issues with structure padding
+    sc = kmalloc(sizeof(*sc), KM_ZERO);
     if (!sc) {
         return -1;
     }
-    priv = (struct ns16550_priv *)(sc + 1);
+    
+    priv = kmalloc(sizeof(*priv), KM_ZERO);
+    if (!priv) {
+        kfree(sc);
+        return -1;
+    }
     
     // Find matching configuration
     compat = device_get_compatible(dev);
     if (compat) {
-        for (int i = 0; i < sizeof(ns16550_matches) / sizeof(ns16550_matches[0]); i++) {
+        size_t num_matches = sizeof(ns16550_matches) / sizeof(ns16550_matches[0]);
+        for (size_t i = 0; i < num_matches; i++) {
             if (strcmp(compat, ns16550_matches[i].value) == 0) {
                 match = &ns16550_matches[i];
                 break;
@@ -355,7 +405,11 @@ static int ns16550_attach(struct device *dev) {
     // Apply configuration
     if (match && match->driver_data) {
         // Use device-specific configuration
-        *priv = *(struct ns16550_priv *)match->driver_data;
+        struct ns16550_priv *config = (struct ns16550_priv *)match->driver_data;
+        priv->reg_shift = config->reg_shift;
+        priv->reg_width = config->reg_width;
+        priv->has_fifo = config->has_fifo;
+        priv->fifo_size = config->fifo_size;
     } else {
         // Use default configuration
         priv->reg_shift = 0;
@@ -370,15 +424,98 @@ static int ns16550_attach(struct device *dev) {
     // Set priv pointer AFTER uart_softc_init
     sc->priv = priv;
     
+    
     // Check if device is mapped
     res = device_get_resource(dev, RES_TYPE_MEM, 0);
     if (!res || !res->mapped_addr) {
+        kfree(priv);
         kfree(sc);
         return -1;
     }
     
+    // Verify sc->regs was set by uart_softc_init
+    if (!sc->regs) {
+        uart_putc('!');  // Signal that regs is NULL
+        kfree(priv);
+        kfree(sc);
+        return -1;
+    }
+    
+    // Check if priv pointer is valid before calling init
+    if (!sc->priv) {
+        uart_putc('?');  // Signal that priv is NULL
+        kfree(priv);
+        kfree(sc);
+        return -1;
+    }
+    
+    // HARDWARE WORKAROUND: Critical synchronization requirement
+    // 
+    // The NS16550 UART (at least on RK3588/ODroid M2) has an undocumented
+    // requirement: before the first register access in ns16550_init(), we MUST:
+    // 1. Wait for the transmit buffer to be empty (check LSR THRE bit)
+    // 2. Write at least one byte to the transmit holding register
+    //
+    // Without this exact sequence, the first register write in ns16550_init()
+    // causes the system to hang. This may be related to:
+    // - Internal UART state machine requirements
+    // - Hardware FIFO initialization needs
+    // - Bus/interconnect synchronization requirements
+    // - Undocumented silicon errata
+    //
+    // Testing confirms:
+    // - Just reading LSR is NOT sufficient
+    // - Just waiting for THRE is NOT sufficient  
+    // - We MUST both wait AND write for the UART to work correctly
+    //
+    if (sc->regs && priv) {
+        uint8_t *base = (uint8_t *)sc->regs;
+        uint32_t lsr_offset = NS16550_LSR << priv->reg_shift;
+        uint32_t thr_offset = NS16550_THR << priv->reg_shift;
+        uint32_t lsr_val;
+        
+        // Step 1: Wait for transmit buffer to be empty
+        // Must use proper width-specific MMIO functions for compatibility
+        do {
+            switch (priv->reg_width) {
+                case 1:
+                    lsr_val = mmio_read8(base + lsr_offset);
+                    break;
+                case 2:
+                    lsr_val = mmio_read16(base + lsr_offset);
+                    break;
+                case 4:
+                    lsr_val = mmio_read32(base + lsr_offset);
+                    break;
+                default:
+                    lsr_val = mmio_read8(base + lsr_offset);
+                    break;
+            }
+        } while (!(lsr_val & NS16550_LSR_THRE));
+        
+        // Step 2: Write a dummy byte (required for synchronization)
+        switch (priv->reg_width) {
+            case 1:
+                mmio_write8(base + thr_offset, 0x00);
+                break;
+            case 2:
+                mmio_write16(base + thr_offset, 0x00);
+                break;
+            case 4:
+                mmio_write32(base + thr_offset, 0x00);
+                break;
+            default:
+                mmio_write8(base + thr_offset, 0x00);
+                break;
+        }
+        
+        // Ensure the write completes before continuing
+        arch_io_barrier();
+    }
+    
     // Initialize hardware
     if (ns16550_init(sc) != 0) {
+        kfree(priv);
         kfree(sc);
         return -1;
     }
@@ -401,7 +538,10 @@ static int ns16550_detach(struct device *dev) {
         // Disable interrupts
         ns16550_disable_irq(sc);
         
-        // Free context
+        // Free private data and context
+        if (sc->priv) {
+            kfree(sc->priv);
+        }
         kfree(sc);
     }
     
@@ -430,20 +570,20 @@ static struct driver ns16550_driver = {
     .matches = ns16550_matches,
     .num_matches = sizeof(ns16550_matches) / sizeof(ns16550_matches[0]),
     .priority = 10,
-    .priv_size = sizeof(struct uart_softc) + sizeof(struct ns16550_priv),
+    .priv_size = 0,  // Driver allocates its own memory in attach
     .flags = DRIVER_FLAG_BUILTIN | DRIVER_FLAG_EARLY,
 };
 
 static void ns16550_driver_init(void) {
     int ret;
     
-    uart_puts("NS16550: Registering driver\n");
+    // uart_puts("NS16550: Registering driver\n");
     
     ret = driver_register(&ns16550_driver);
     if (ret == 0) {
-        uart_puts("NS16550: Driver registered successfully\n");
+        // uart_puts("NS16550: Driver registered successfully\n");
     } else {
-        uart_puts("NS16550: Failed to register driver\n");
+        // uart_puts("NS16550: Failed to register driver\n");
     }
 }
 

@@ -51,6 +51,9 @@ typedef struct vmm_arch_ops {
     /* Memory barrier for page table updates */
     void (*barrier)(void);
     
+    /* Ensure page table entry is visible to MMU (arch-specific cache ops) */
+    void (*ensure_pte_visible)(void *pte);
+    
     /* Get number of page table levels for this architecture */
     int (*get_pt_levels)(void);
     

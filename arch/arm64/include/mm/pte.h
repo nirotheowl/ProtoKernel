@@ -52,11 +52,14 @@
 #define ARM64_PTE_IS_TABLE(pte)     (((pte) & ARM64_PTE_TYPE_MASK) == ARM64_PTE_TYPE_TABLE)
 #define ARM64_PTE_IS_BLOCK(pte)     (((pte) & ARM64_PTE_TYPE_MASK) == ARM64_PTE_TYPE_BLOCK)
 
-/* Memory type definitions (MAIR indices) */
-#define MT_DEVICE_nGnRnE        0  /* Device, non-gathering, non-reordering, no early ack */
-#define MT_DEVICE_nGnRE         1  /* Device, non-gathering, non-reordering, early ack */
+/* Memory type definitions (MAIR indices) 
+ * NOTE: These must match what boot.S sets up in MAIR_EL1!
+ * boot.S configures: Index 0 = Normal memory (0x44), Index 1 = Device (0xFF)
+ */
+#define MT_NORMAL               0  /* Normal, cacheable - boot.S index 0 */
+#define MT_DEVICE_nGnRnE        1  /* Device, non-gathering, non-reordering, no early ack - boot.S index 1 */
 #define MT_NORMAL_NC            2  /* Normal, non-cacheable */
-#define MT_NORMAL               3  /* Normal, cacheable */
+#define MT_DEVICE_nGnRE         3  /* Device, non-gathering, non-reordering, early ack */
 
 /* Virtual address format for 4KB pages with 4-level translation */
 #define ARM64_VA_L0_SHIFT       39  /* Level 0 index */

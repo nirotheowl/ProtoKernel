@@ -7,6 +7,7 @@
 
 #include <memory/devmap.h>
 #include <memory/vmm.h>
+#include <memory/vmm_arch.h>
 #include <memory/vmparam.h>
 #include <memory/pmm.h>
 #include <uart.h>
@@ -420,6 +421,9 @@ int devmap_map_all_devices(void)
     uart_puts("DEVMAP: Mapped ");
     uart_puthex(mapped_count);
     uart_puts(" device resources\n");
+    
+    /* Flush entire TLB to ensure all device mappings are visible */
+    vmm_flush_tlb_all();
     
     return mapped_count;
 }

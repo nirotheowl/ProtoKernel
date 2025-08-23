@@ -206,6 +206,28 @@ el1_entry:
      */
 
     /*
+     * Clear BSS Section
+     * =================
+     * Clear the BSS section using physical addresses
+     */
+    
+    /* Get BSS start and end addresses (virtual) and convert to physical */
+    ldr x0, =__bss_start
+    ldr x1, =__bss_end
+    ldr x2, =KERNEL_VIRT_BASE
+    sub x0, x0, x2          /* Convert virtual to offset */
+    sub x1, x1, x2          /* Convert virtual to offset */
+    add x0, x0, x28         /* Add physical base to get physical BSS start */
+    add x1, x1, x28         /* Add physical base to get physical BSS end */
+    
+    /* Clear BSS */
+1:  cmp x0, x1
+    b.hs 2f                 /* If start >= end, we're done */
+    str xzr, [x0], #8       /* Store zero and increment pointer by 8 */
+    b 1b
+2:
+
+    /*
      * Create Identity Mapping Page Tables
      * ===================================
      * We'll create a simple identity mapping for the bootstrap phase.

@@ -31,6 +31,7 @@ static void arm64_set_pt_base(uint64_t phys);
 static void arm64_flush_tlb_page(uint64_t vaddr);
 static void arm64_flush_tlb_all(void);
 static void arm64_barrier(void);
+static void arm64_ensure_pte_visible(void *pte);
 static int arm64_get_pt_levels(void);
 static uint64_t arm64_get_pt_index(uint64_t vaddr, int level);
 static bool arm64_is_pte_valid(uint64_t pte);
@@ -53,6 +54,7 @@ const vmm_arch_ops_t vmm_arch_ops = {
     .flush_tlb_page = arm64_flush_tlb_page,
     .flush_tlb_all = arm64_flush_tlb_all,
     .barrier = arm64_barrier,
+    .ensure_pte_visible = arm64_ensure_pte_visible,
     .get_pt_levels = arm64_get_pt_levels,
     .get_pt_index = arm64_get_pt_index,
     .is_pte_valid = arm64_is_pte_valid,
@@ -136,7 +138,8 @@ static uint64_t* arm64_walk_create(struct vmm_context *ctx, uint64_t vaddr,
             uint64_t phys = vmm_pt_virt_to_phys(new_table);
             *pte = ARM64_PHYS_TO_PTE(phys) | ARM64_PTE_TYPE_TABLE | ARM64_PTE_VALID;
             
-            // Ensure write is visible
+            // Ensure write is visible to MMU
+            arm64_ensure_pte_visible(pte);
             arm64_barrier();
         } else if (arm64_is_pte_block(*pte, level)) {
             // Hit a block entry before reaching target level
@@ -254,6 +257,15 @@ static void arm64_flush_tlb_all(void) {
 // Memory barrier
 static void arm64_barrier(void) {
     arch_mmu_barrier();
+}
+
+// Ensure page table entry is visible to MMU
+static void arm64_ensure_pte_visible(void *pte) {
+    // ARM64 requires explicit cache maintenance for page table updates
+    // to ensure the MMU can see the changes on real hardware
+    __asm__ volatile("dc cvac, %0" : : "r"(pte) : "memory");  // Clean D-cache by VA to PoC
+    __asm__ volatile("dsb ishst");  // Data synchronization barrier (inner shareable, stores)
+    __asm__ volatile("isb");        // Instruction synchronization barrier
 }
 
 // Get number of page table levels

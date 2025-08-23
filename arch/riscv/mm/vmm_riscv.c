@@ -31,6 +31,7 @@ static void riscv_set_pt_base(uint64_t phys);
 static void riscv_flush_tlb_page(uint64_t vaddr);
 static void riscv_flush_tlb_all(void);
 static void riscv_barrier(void);
+static void riscv_ensure_pte_visible(void *pte);
 static int riscv_get_pt_levels(void);
 static uint64_t riscv_get_pt_index(uint64_t vaddr, int level);
 static bool riscv_is_pte_valid(uint64_t pte);
@@ -53,6 +54,7 @@ const vmm_arch_ops_t vmm_arch_ops = {
     .flush_tlb_page = riscv_flush_tlb_page,
     .flush_tlb_all = riscv_flush_tlb_all,
     .barrier = riscv_barrier,
+    .ensure_pte_visible = riscv_ensure_pte_visible,
     .get_pt_levels = riscv_get_pt_levels,
     .get_pt_index = riscv_get_pt_index,
     .is_pte_valid = riscv_is_pte_valid,
@@ -223,6 +225,13 @@ static void riscv_flush_tlb_all(void) {
 // Memory barrier
 static void riscv_barrier(void) {
     arch_mmu_barrier();
+}
+
+// Ensure page table entry is visible to MMU
+static void riscv_ensure_pte_visible(void *pte) {
+    // RISC-V typically doesn't need explicit cache maintenance for page tables
+    // on most implementations, but we include a fence for completeness
+    __asm__ volatile("fence rw, rw" ::: "memory");
 }
 
 // Get number of page table levels
