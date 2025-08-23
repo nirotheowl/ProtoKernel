@@ -10,7 +10,7 @@
 #include <uart.h>
 #include <string.h>
 
-#define MAX_ALLOCS 1000
+#define MAX_ALLOCS 10000  // Increased to handle 16GB+ of RAM with various block sizes
 
 struct allocation {
     uint64_t addr;
