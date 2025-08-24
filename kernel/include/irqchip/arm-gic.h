@@ -118,9 +118,14 @@ struct gic_data {
 #define GICR_SGI_BASE   0x10000 // Offset to SGI/PPI registers
 
 // Control register bits
-#define GICD_CTLR_ENABLE_GRP0   (1 << 0)
-#define GICD_CTLR_ENABLE_GRP1   (1 << 1)
+#define GICD_CTLR_ENABLE_GRP0   (1 << 0)  // GICv2: Group 0, GICv3: Group 1 (Secure)
+#define GICD_CTLR_ENABLE_GRP1   (1 << 1)  // GICv2: Group 1, GICv3: Group 1A (Non-secure)
 #define GICD_CTLR_ARE_NS        (1 << 4)  // GICv3: Enable affinity routing
+#define GICD_CTLR_DS            (1 << 6)  // GICv3: Disable Security
+#define GICD_CTLR_RWP           (1U << 31) // GICv3: Register Write Pending
+// For clarity in GICv3 code:
+#define GICD_CTLR_ENABLE_G1     GICD_CTLR_ENABLE_GRP0
+#define GICD_CTLR_ENABLE_G1A    GICD_CTLR_ENABLE_GRP1
 
 #define GICC_CTLR_ENABLE_GRP0   (1 << 0)
 #define GICC_CTLR_ENABLE_GRP1   (1 << 1)
@@ -151,6 +156,10 @@ struct gic_data {
     mmio_read32((uint8_t*)(gic)->dist_base + (offset))
 #define gic_dist_write(gic, offset, val) \
     mmio_write32((uint8_t*)(gic)->dist_base + (offset), (val))
+#define gic_dist_read64(gic, offset) \
+    mmio_read64((uint8_t*)(gic)->dist_base + (offset))
+#define gic_dist_write64(gic, offset, val) \
+    mmio_write64((uint8_t*)(gic)->dist_base + (offset), (val))
 
 // Calculate register offset and bit position for an interrupt
 static inline void gic_irq_reg_pos(uint32_t hwirq, uint32_t *reg, uint32_t *bit) {

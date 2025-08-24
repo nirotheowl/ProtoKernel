@@ -19,6 +19,9 @@ void run_arm_hardware_interrupt_tests(void);
 // Comprehensive ARM GIC tests
 void run_arm_gic_comprehensive_tests(void);
 
+// ARM GICv3-specific tests
+void test_arm_gic_v3(void);
+
 // ARM real hardware interrupt tests
 void run_arm_real_interrupt_tests(void);
 

@@ -155,7 +155,7 @@ static inline uint64_t read_mpidr(void) {
 #define MPIDR_AFF2_SHIFT    16
 #define MPIDR_AFF3_SHIFT    32
 
-#define MPIDR_AFFINITY_MASK 0xFF00FFFFFF
+#define MPIDR_AFFINITY_MASK 0x00FFFFFF  // Aff0-2 only, not Aff3 for GICv3
 
 static inline uint32_t mpidr_to_affinity(uint64_t mpidr) {
     return (uint32_t)(mpidr & MPIDR_AFFINITY_MASK);

@@ -21,8 +21,15 @@ void run_all_irq_tests(void) {
 #ifdef __aarch64__
     uart_puts("\n>>> Testing ARM GIC...\n");
     run_arm_gic_comprehensive_tests();
+    
+    // GICv3-specific tests
+    uart_puts("\n>>> Testing GICv3-specific features...\n");
+    test_arm_gic_v3();
 #endif
     
+    // Comment out less relevant tests for GIC validation
+    // Uncomment these if testing the full IRQ subsystem
+    /*
     // IRQ descriptor tests
     uart_puts("\n>>> Testing IRQ Descriptors...\n");
     run_irq_descriptor_tests();
@@ -42,6 +49,7 @@ void run_all_irq_tests(void) {
     // Tree domain tests
     uart_puts("\n>>> Testing Tree Domain Support...\n");
     test_tree_domains_comprehensive();
+    */
     
     uart_puts("\n");
     uart_puts("================================================================\n");

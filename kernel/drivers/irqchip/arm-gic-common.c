@@ -253,15 +253,34 @@ int gic_init(void) {
 
 // Probe GIC from device
 int gic_probe(struct device *dev) {
-    struct gic_data *gic = &primary_gic_data;
+    struct gic_data *gic;
     struct resource *res;
     
     uart_puts("GIC: Probing device\n");
     
+    // Check if we've already initialized a GIC
+    if (gic_primary) {
+        uart_puts("GIC: Already initialized, skipping probe\n");
+        return -1;
+    }
+    
+    // Use the static structure for this probe attempt
+    gic = &primary_gic_data;
+    
+    // Only clear if not already in use (defensive check)
+    if (gic == gic_primary) {
+        uart_puts("GIC: ERROR: primary_gic_data already in use!\n");
+        return -1;
+    }
+    
+    // Clear the structure to ensure clean state
+    memset(gic, 0, sizeof(*gic));
+    
     // Determine GIC version from compatible string
     if (strstr(dev->compatible, "arm,gic-v3")) {
-        uart_puts("GIC: Detected GICv3 (not yet implemented)\n");
-        return -1;  // TODO: Will be implemented in Phase 2
+        gic->version = GIC_V3;
+        gic->ops = &gicv3_ops;
+        uart_puts("GIC: Detected GICv3\n");
     } else if (strstr(dev->compatible, "arm,gic-400") ||
                strstr(dev->compatible, "arm,cortex-a15-gic") ||
                strstr(dev->compatible, "arm,cortex-a9-gic")) {
@@ -297,12 +316,27 @@ int gic_probe(struct device *dev) {
             return -1;
         }
         gic->cpu_base = res->mapped_addr;
+    } else if (gic->version == GIC_V3) {
+        // GICv3 uses redistributor regions instead of CPU interface
+        res = device_get_resource(dev, RES_TYPE_MEM, 1);
+        if (!res) {
+            uart_puts("GIC: Failed to get redistributor resource\n");
+            return -1;
+        }
+        if (!res->mapped_addr) {
+            uart_puts("GIC: Redistributor not mapped to virtual memory\n");
+            return -1;
+        }
+        gic->redist_base = res->mapped_addr;
+        gic->redist_size = resource_size(res);
+        uart_puts("GIC: Redistributor mapped at ");
+        uart_puthex((uint64_t)gic->redist_base);
+        uart_puts(" size ");
+        uart_puthex(gic->redist_size);
+        uart_puts("\n");
     }
-    // GICv3 will set redist_base when implemented
     
     gic->dev = dev;
-    
-    uart_puts("GIC: Memory regions mapped\n");
     
     // Initialize version-specific implementation
     if (gic->ops && gic->ops->init) {
@@ -344,9 +378,7 @@ static int gic_driver_probe(struct device *dev) {
     
     // Check for GICv3
     if (strstr(dev->compatible, "arm,gic-v3")) {
-        // Recognized but not yet supported
-        uart_puts("GIC: GICv3 detected in probe\n");
-        return PROBE_SCORE_NONE;  // TODO: Return EXACT when v3 is implemented
+        return PROBE_SCORE_EXACT;
     }
     
     return PROBE_SCORE_NONE;
@@ -361,6 +393,22 @@ static int gic_driver_attach(struct device *dev) {
     // Enable the GIC after successful probe
     uart_puts("GIC: Enabling interrupt controller\n");
     gic_enable();
+    
+    // DEBUG: Verify distributor is actually enabled
+    #ifdef __aarch64__
+    if (gic_primary && gic_primary->version == GIC_V3 && gic_primary->dist_base) {
+        uint32_t ctlr = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_CTLR);
+        uart_puts("GIC: After enable, GICD_CTLR = ");
+        uart_puthex(ctlr);
+        if (ctlr & (1U << 31)) {
+            uart_puts(" [RWP set!]");
+        }
+        if (!(ctlr & 0x3)) {
+            uart_puts(" [WARNING: No enable bits set!]");
+        }
+        uart_puts("\n");
+    }
+    #endif
     
     return 0;
 }
