@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <arch_cache.h>
 #include <arch_exceptions.h>
+#include <exceptions/exceptions.h>
 
 // External symbols from linker script
 extern char _kernel_end;
@@ -41,8 +42,8 @@ void init_riscv(unsigned long hart_id, void *dtb) {
     // Initialize cache subsystem
     arch_cache_init();
     
-    // Install trap/exception handlers
-    arch_install_exception_handlers();
+    // Install trap/exception handlers using the architecture-agnostic function
+    exception_init();
     
     // Jump to common kernel initialization
     kernel_main(dtb);

@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <exceptions/exceptions.h>
 
 // External symbols from linker script
 extern char _kernel_end;
@@ -33,6 +34,10 @@ void init_arm64(void* dtb) {
     // phys_base_storage was set in physical memory, but we can read it
     // because we have identity mapping for the kernel region
     kernel_phys_base = phys_base_storage;
+    
+    // Install exception vectors early (before any interrupts can occur)
+    // Uses the architecture-agnostic function that handles UART safely
+    exception_init();
     
     // Jump to common kernel initialization
     kernel_main(dtb);

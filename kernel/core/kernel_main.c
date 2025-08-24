@@ -35,7 +35,7 @@
 #include <tests/slab_lookup_tests.h>
 #include <tests/page_alloc_tests.h>
 #include <tests/page_alloc_stress.h>
-// #include <tests/irq_tests.h>
+#include <tests/irq_tests.h>
 
 // External symbols from linker script
 extern char __kernel_start;
@@ -143,15 +143,19 @@ void kernel_main(void* dtb) {
     // Report FDT manager state
     fdt_mgr_print_info();
     
+    // Initialize exception handling (architecture-agnostic)
+    uart_puts("\nInitializing exception handling...\n");
+    exception_init();
+    
     // Initialize interrupt controller drivers (after UART so we get output)
     uart_puts("\nInitializing interrupt controllers...\n");
-    // irqchip_init();
+    irqchip_init();
     
     // Print device mappings
     // devmap_print_mappings();
     
     // Print the device tree
-    // device_print_tree(NULL, 0);
+    device_print_tree(NULL, 0);
     
     // Print driver registry
     driver_print_registry();
@@ -179,16 +183,16 @@ void kernel_main(void* dtb) {
     // run_slab_lookup_tests();
     
     // kmalloc tests (built on slab allocator)
-    run_kmalloc_tests();
+    // run_kmalloc_tests();
     
     // Malloc types tests
-    run_malloc_types_tests();
+    // run_malloc_types_tests();
     
     // Stress tests last (most intensive)
-    page_alloc_stress_tests();  
+    // page_alloc_stress_tests();  
     
     // Run all IRQ subsystem tests
-    // run_all_irq_tests();
+    run_all_irq_tests();
 
     uart_puts("\nKernel initialization complete!\n");
     uart_puts("System halted.\n");

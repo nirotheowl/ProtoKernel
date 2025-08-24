@@ -13,14 +13,33 @@ void run_all_irq_tests(void) {
     uart_puts("            IRQ SUBSYSTEM TESTS\n");
     uart_puts("================================================================\n");
     
-    // Comment out old tests - focusing on tree domain testing
-    // uart_puts("\n>>> Testing Hierarchical Domain Support...\n");
+    // Basic IRQ tests
+    uart_puts("\n>>> Testing Basic IRQ Functionality...\n");
+    run_irq_basic_tests();
+    
+    // GIC tests (ARM64 only)
+#ifdef __aarch64__
+    uart_puts("\n>>> Testing ARM GIC...\n");
+    run_arm_gic_comprehensive_tests();
+#endif
+    
+    // IRQ descriptor tests
+    uart_puts("\n>>> Testing IRQ Descriptors...\n");
+    run_irq_descriptor_tests();
+    
+    // IRQ allocator tests
+    uart_puts("\n>>> Testing IRQ Allocator...\n");
+    run_irq_allocator_tests();
+    
+    // Hierarchical domain tests
+    uart_puts("\n>>> Testing Hierarchical Domain Support...\n");
     test_hierarchical_domains();
     
-    // uart_puts("\n>>> Testing Radix Tree (for sparse domains)...\n");
+    // Radix tree tests (for sparse domains)
+    uart_puts("\n>>> Testing Radix Tree (for sparse domains)...\n");
     test_radix_tree_all();
     
-    // Run comprehensive tree domain tests
+    // Tree domain tests
     uart_puts("\n>>> Testing Tree Domain Support...\n");
     test_tree_domains_comprehensive();
     

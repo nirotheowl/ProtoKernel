@@ -132,6 +132,13 @@ void arch_install_exception_handlers(void) {
     __asm__ volatile("csrw sie, zero");
 }
 
+// Architecture-agnostic exception initialization
+void exception_init(void) {
+    uart_puts("Installing exception handlers...\n");
+    arch_install_exception_handlers();
+    uart_puts("Exception handlers installed\n");
+}
+
 // Get current privilege level
 int arch_get_exception_level(void) {
     // RISC-V doesn't have exception levels like ARM
