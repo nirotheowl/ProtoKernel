@@ -128,6 +128,14 @@ static inline void gicv3_write_bpr1(uint32_t val) {
     gic_sysreg_write(ICC_BPR1_EL1, val);
 }
 
+static inline uint32_t gicv3_read_bpr1(void) {
+    return (uint32_t)gic_sysreg_read(ICC_BPR1_EL1);
+}
+
+static inline uint32_t gicv3_read_rpr(void) {
+    return (uint32_t)gic_sysreg_read(ICC_RPR_EL1);
+}
+
 // Memory barrier operations for GIC
 static inline void gic_wmb(void) {
     __asm__ volatile("dsb sy" ::: "memory");

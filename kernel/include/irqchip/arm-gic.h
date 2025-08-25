@@ -95,7 +95,11 @@ struct gic_data {
 #define GICD_IPRIORITYR 0x0400  // Interrupt Priority Registers
 #define GICD_ITARGETSR  0x0800  // Interrupt Processor Targets Registers (GICv2 only)
 #define GICD_ICFGR      0x0C00  // Interrupt Configuration Registers
+#define GICD_IGRPMODR   0x0D00  // Interrupt Group Modifier Registers (GICv3)
+#define GICD_NSACR      0x0E00  // Non-secure Access Control Registers
 #define GICD_SGIR       0x0F00  // Software Generated Interrupt Register (GICv2 only)
+#define GICD_CPENDSGIR  0x0F10  // Clear Pending Software Generated Interrupts
+#define GICD_SPENDSGIR  0x0F20  // Set Pending Software Generated Interrupts
 #define GICD_IROUTER    0x6000  // Interrupt Routing Registers (GICv3+ only)
 
 // GIC CPU Interface registers (GICv2 only)

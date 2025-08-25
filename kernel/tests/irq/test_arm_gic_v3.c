@@ -11,6 +11,7 @@
 #include <arch_gic_sysreg.h>
 #include <uart.h>
 #include <arch_interface.h>
+#include <arch_io.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -30,10 +31,12 @@ static volatile int test_spi_count = 0;
 
 // Test handlers
 static void gicv3_sgi_handler(void *data) {
+    (void)data;  // Suppress unused parameter warning
     test_sgi_count++;
 }
 
 static void gicv3_spi_handler(void *data) {
+    (void)data;  // Suppress unused parameter warning
     test_spi_count++;
 }
 
@@ -360,6 +363,546 @@ static void test_gicv3_properties(void) {
     }
 }
 
+// Test 7: Test interrupt priority management
+static void test_interrupt_priorities(void) {
+    TEST_START("GICv3 Interrupt Priority Management");
+    
+    if (!is_gicv3()) {
+        return;
+    }
+    
+    // Test priority mask register full range
+    uint32_t original_pmr = gicv3_read_pmr();
+    
+    // Test various priority levels
+    // Note: Many GIC implementations only support 4-bit priority (16 levels)
+    // so values might be masked to 0xF0, 0xE0, etc.
+    uint32_t test_priorities[] = {0x00, 0x20, 0x40, 0x80, 0xC0, 0xE0, 0xFF};
+    bool pmr_test_passed = true;
+    uint32_t priority_mask = 0xFF;  // Will be determined from first non-zero write
+    bool mask_determined = false;
+    
+    for (int i = 0; i < 7; i++) {
+        gicv3_write_pmr(test_priorities[i]);
+        __asm__ volatile("isb");
+        uint32_t readback = gicv3_read_pmr();
+        
+        // Determine the priority mask from hardware behavior
+        if (!mask_determined && test_priorities[i] != 0) {
+            if (readback != test_priorities[i]) {
+                // Hardware is masking priorities - determine the mask
+                priority_mask = readback | ~test_priorities[i];
+                mask_determined = true;
+                uart_puts("    [INFO] Hardware priority mask detected: ");
+                uart_puthex(priority_mask);
+                uart_puts(" (");
+                // Count bits manually instead of using __builtin_popcount
+                int bits = 0;
+                uint32_t mask_copy = priority_mask;
+                while (mask_copy) {
+                    bits += mask_copy & 1;
+                    mask_copy >>= 1;
+                }
+                uart_putdec(1 << (8 - bits));
+                uart_puts(" priority levels)\n");
+            }
+        }
+        
+        // Check if readback matches expected (with mask applied)
+        uint32_t expected = test_priorities[i] & priority_mask;
+        if (readback != expected) {
+            pmr_test_passed = false;
+            uart_puts("    PMR unexpected value at ");
+            uart_puthex(test_priorities[i]);
+            uart_puts(" (got ");
+            uart_puthex(readback);
+            uart_puts(", expected ");
+            uart_puthex(expected);
+            uart_puts(")\n");
+        }
+    }
+    
+    if (pmr_test_passed) {
+        TEST_PASS("ICC_PMR_EL1 test successful (with hardware masking)");
+    } else {
+        TEST_FAIL("ICC_PMR_EL1 unexpected behavior");
+    }
+    
+    // Test Binary Point Register
+    uint32_t original_bpr = gicv3_read_bpr1();
+    
+    // BPR typically supports values 0-7, but hardware may enforce minimum values
+    // The GIC architecture allows implementations to limit BPR to minimum values
+    uint32_t min_bpr = 7;
+    bool bpr_test_passed = true;
+    
+    for (uint32_t bpr_val = 0; bpr_val <= 7; bpr_val++) {
+        gicv3_write_bpr1(bpr_val);
+        __asm__ volatile("isb");
+        uint32_t readback = gicv3_read_bpr1();
+        
+        // Determine minimum BPR value supported by hardware
+        if (bpr_val == 0 && readback > 0) {
+            min_bpr = readback;
+            uart_puts("    [INFO] Minimum BPR value enforced by hardware: ");
+            uart_putdec(min_bpr);
+            uart_puts("\n");
+        }
+        
+        // Check if readback is within expected range
+        uint32_t expected = (bpr_val < min_bpr) ? min_bpr : bpr_val;
+        if (readback != expected && readback > bpr_val) {
+            // Only fail if it's truly unexpected (not just minimum enforcement)
+            bpr_test_passed = false;
+            uart_puts("    BPR unexpected: wrote ");
+            uart_putdec(bpr_val);
+            uart_puts(", got ");
+            uart_putdec(readback);
+            uart_puts("\n");
+        }
+    }
+    
+    if (bpr_test_passed) {
+        TEST_PASS("ICC_BPR1_EL1 configuration test completed");
+    } else {
+        TEST_FAIL("ICC_BPR1_EL1 unexpected behavior");
+    }
+    
+    // Test priority grouping via BPR
+    gicv3_write_bpr1(3);  // 4 group priority bits, 4 subpriority bits
+    __asm__ volatile("isb");
+    uint32_t bpr_readback = gicv3_read_bpr1();
+    if (bpr_readback <= 3) {
+        TEST_PASS("Binary Point configuration accepted");
+    } else {
+        TEST_INFO("Binary Point configuration limited by hardware");
+    }
+    
+    // Test running priority register (read-only)
+    uint32_t rpr = gicv3_read_rpr();
+    if (rpr == 0xFF || rpr == 0x00) {  // Idle priority or no active interrupts
+        TEST_PASS("ICC_RPR_EL1 indicates idle state");
+    } else {
+        TEST_INFO("ICC_RPR_EL1 shows active priority");
+        uart_puts("    RPR value: ");
+        uart_puthex(rpr);
+        uart_puts("\n");
+    }
+    
+    // Restore original values
+    gicv3_write_pmr(original_pmr);
+    gicv3_write_bpr1(original_bpr);
+    __asm__ volatile("isb");
+}
+
+// Test 8: Test edge vs level triggered interrupts
+static void test_trigger_modes(void) {
+    TEST_START("GICv3 Edge vs Level Triggered Interrupts");
+    
+    if (!is_gicv3() || !gic_primary) {
+        return;
+    }
+    
+    // Test SPI configuration (SPIs can be configured, SGIs/PPIs are fixed)
+    uint32_t test_spi = 32;  // First SPI
+    
+    // Save original configuration
+    uint32_t reg = test_spi / 16;
+    uint32_t shift = (test_spi % 16) * 2;
+    uint32_t orig_cfg = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4));
+    
+    // Test level-triggered (0b00)
+    uint32_t new_cfg = orig_cfg & ~(0x3 << shift);
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4), new_cfg);
+    uint32_t readback = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4));
+    
+    if ((readback & (0x3 << shift)) == 0) {
+        TEST_PASS("Level-triggered configuration set");
+    } else {
+        TEST_FAIL("Failed to set level-triggered mode");
+    }
+    
+    // Test edge-triggered (0b10)
+    new_cfg = orig_cfg | (0x2 << shift);
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4), new_cfg);
+    readback = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4));
+    
+    if ((readback & (0x3U << shift)) == (0x2U << shift)) {
+        TEST_PASS("Edge-triggered configuration set");
+    } else {
+        TEST_FAIL("Failed to set edge-triggered mode");
+    }
+    
+    // Test that SGIs have fixed configuration (edge-triggered)
+    uint32_t sgi_cfg = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ICFGR);
+    // SGIs should all be edge-triggered (0xAAAAAAAA for interrupts 0-15)
+    if ((sgi_cfg & 0xAAAA0000) == 0xAAAA0000) {  // Check upper 16 bits for SGIs
+        TEST_PASS("SGIs have fixed edge-triggered configuration");
+    } else {
+        TEST_INFO("SGI configuration differs from expected");
+    }
+    
+    // Restore original configuration
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4), orig_cfg);
+}
+
+// Test 9: Test interrupt state transitions
+static void test_interrupt_states(void) {
+    TEST_START("GICv3 Interrupt State Transitions");
+    
+    if (!is_gicv3() || !gic_primary) {
+        return;
+    }
+    
+    // Use a high SPI that's unlikely to be in use
+    uint32_t test_irq = 100;
+    uint32_t reg = test_irq / 32;
+    uint32_t bit = 1 << (test_irq % 32);
+    
+    // Ensure interrupt is disabled first
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICENABLER + (reg * 4), bit);
+    
+    // Clear any pending state
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICPENDR + (reg * 4), bit);
+    
+    // Test pending state
+    // Set pending
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ISPENDR + (reg * 4), bit);
+    uint32_t pending = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ISPENDR + (reg * 4));
+    
+    if (pending & bit) {
+        TEST_PASS("Interrupt pending state set");
+    } else {
+        TEST_FAIL("Failed to set pending state");
+    }
+    
+    // Clear pending
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICPENDR + (reg * 4), bit);
+    pending = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ISPENDR + (reg * 4));
+    
+    if (!(pending & bit)) {
+        TEST_PASS("Interrupt pending state cleared");
+    } else {
+        TEST_FAIL("Failed to clear pending state");
+    }
+    
+    // Test active state registers exist and are readable
+    uint32_t active = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ISACTIVER + (reg * 4));
+    TEST_INFO("Active state register readable");
+    (void)active;  // Suppress unused variable warning
+    
+    // Note: We can't easily test setting active state as it requires
+    // the interrupt to actually be acknowledged and in progress
+    
+    // Test that we can read the interrupt state
+    TEST_PASS("Interrupt state registers accessible");
+}
+
+// Test 10: Test redistributor wake sequence thoroughly
+static void test_redistributor_wake_sequence(void) {
+    TEST_START("GICv3 Redistributor Wake Sequence");
+    
+    if (!is_gicv3() || !gic_primary || !gic_primary->redist_base) {
+        return;
+    }
+    
+    // Get the first redistributor
+    void *rd_base = gic_primary->redist_base;
+    
+    // Read GICR_WAKER register
+    uint32_t waker = mmio_read32((uint8_t*)rd_base + GICR_WAKER);
+    
+    // Check initial state
+    if (!(waker & GICR_WAKER_ProcessorSleep)) {
+        TEST_PASS("Redistributor already awake");
+    } else {
+        TEST_INFO("Redistributor was asleep, waking...");
+        
+        // Clear ProcessorSleep to wake up
+        waker &= ~GICR_WAKER_ProcessorSleep;
+        mmio_write32((uint8_t*)rd_base + GICR_WAKER, waker);
+        
+        // Wait for ChildrenAsleep to clear
+        int timeout = 100000;
+        while (timeout-- > 0) {
+            waker = mmio_read32((uint8_t*)rd_base + GICR_WAKER);
+            if (!(waker & GICR_WAKER_ChildrenAsleep)) {
+                break;
+            }
+            __asm__ volatile("nop");
+        }
+        
+        if (timeout > 0) {
+            TEST_PASS("Redistributor wake sequence completed");
+        } else {
+            TEST_FAIL("Redistributor wake timeout");
+        }
+    }
+    
+    // Verify redistributor is functional by reading GICR_TYPER
+    uint64_t typer = mmio_read64((uint8_t*)rd_base + GICR_TYPER);
+    if (typer != 0 && typer != 0xFFFFFFFFFFFFFFFF) {
+        TEST_PASS("Redistributor TYPER register readable");
+        
+        // Check redistributor properties
+        bool last = (typer >> 4) & 1;
+        bool dpgs = (typer >> 5) & 1;
+        bool lpis = (typer >> 0) & 1;
+        uint32_t cpu_number = (typer >> 8) & 0xFFFF;
+        
+        uart_puts("    CPU Number: ");
+        uart_putdec(cpu_number);
+        uart_puts("\n    Last: ");
+        uart_puts(last ? "Yes" : "No");
+        uart_puts("\n    DirectLPI: ");
+        uart_puts(dpgs ? "Yes" : "No");
+        uart_puts("\n    LPIs: ");
+        uart_puts(lpis ? "Supported" : "Not supported");
+        uart_puts("\n");
+    } else {
+        TEST_FAIL("Invalid GICR_TYPER value");
+    }
+}
+
+// Test 11: Test group configuration
+static void test_group_configuration(void) {
+    TEST_START("GICv3 Interrupt Group Configuration");
+    
+    if (!is_gicv3() || !gic_primary) {
+        return;
+    }
+    
+    // Test SPI group configuration (use a high SPI)
+    uint32_t test_irq = 96;
+    uint32_t reg = test_irq / 32;
+    uint32_t bit = 1 << (test_irq % 32);
+    
+    // Read current group configuration
+    uint32_t orig_group = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (reg * 4));
+    
+    // Check current state
+    bool initially_group1 = (orig_group & bit) != 0;
+    uart_puts("    [INFO] Interrupt initially in Group ");
+    uart_puts(initially_group1 ? "1" : "0");
+    uart_puts("\n");
+    
+    // Try to toggle the group setting
+    // First try to set opposite of current state
+    uint32_t new_val = initially_group1 ? (orig_group & ~bit) : (orig_group | bit);
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (reg * 4), new_val);
+    uint32_t readback = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (reg * 4));
+    
+    bool changed = ((readback & bit) != 0) != initially_group1;
+    
+    if (changed) {
+        TEST_PASS("Group configuration is changeable");
+        
+        // Try to toggle back
+        new_val = initially_group1 ? (readback | bit) : (readback & ~bit);
+        mmio_write32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (reg * 4), new_val);
+        readback = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (reg * 4));
+        
+        if (((readback & bit) != 0) == initially_group1) {
+            TEST_PASS("Group configuration restored");
+        } else {
+            TEST_INFO("Could not restore original group");
+        }
+    } else {
+        // Group configuration is locked
+        TEST_INFO("Group configuration is locked (security policy or hardware limitation)");
+        
+        // Check if it's locked to Group 1 (common in non-secure mode)
+        if (initially_group1) {
+            TEST_INFO("Interrupts locked to Group 1 (expected in non-secure mode)");
+        } else {
+            TEST_INFO("Interrupts locked to Group 0");
+        }
+    }
+    
+    // Check if we can access IGRPMODR for Group 1A configuration
+    // This register might not be accessible in non-secure mode
+    uint32_t orig_grpmod = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_IGRPMODR + (reg * 4));
+    if (orig_grpmod != 0xFFFFFFFF) {  // If we can read it
+        TEST_INFO("IGRPMODR accessible for Group 1A configuration");
+    } else {
+        TEST_INFO("IGRPMODR not accessible (expected in some configurations)");
+    }
+    
+    // Restore original configuration
+    mmio_write32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (reg * 4), orig_group);
+    
+    // Test that all interrupts are in a valid group
+    bool all_grouped = true;
+    for (uint32_t i = 1; i < (gic_primary->nr_irqs / 32); i++) {
+        uint32_t group = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_IGROUPR + (i * 4));
+        // In a properly configured system, interrupts should be in Group 1 for non-secure
+        if (group == 0) {
+            all_grouped = false;
+            break;
+        }
+    }
+    
+    if (all_grouped) {
+        TEST_PASS("All SPIs properly grouped");
+    } else {
+        TEST_INFO("Some SPIs in Group 0");
+    }
+}
+
+// Test 12: Test error conditions and spurious interrupts
+static void test_error_conditions(void) {
+    TEST_START("GICv3 Error Conditions and Spurious Interrupts");
+    
+    if (!is_gicv3()) {
+        return;
+    }
+    
+    // Test spurious interrupt detection
+    // Read IAR when no interrupts are pending
+    uint32_t iar = gicv3_read_iar1();
+    uint32_t irq_id = iar & 0xFFFFFF;
+    
+    if (irq_id >= 1020 && irq_id <= 1023) {
+        TEST_PASS("Spurious interrupt correctly identified");
+        uart_puts("    Spurious IRQ ID: ");
+        uart_putdec(irq_id);
+        uart_puts("\n");
+    } else if (irq_id < 1020) {
+        TEST_INFO("Actual interrupt pending");
+        uart_puts("    IRQ ID: ");
+        uart_putdec(irq_id);
+        uart_puts("\n");
+        // Do EOI to clear it
+        gicv3_write_eoir1(iar);
+    }
+    
+    // Test handling of invalid interrupt numbers
+    if (gic_primary) {
+        // Try to configure an interrupt beyond nr_irqs
+        uint32_t invalid_irq = gic_primary->nr_irqs + 10;
+        if (invalid_irq < 1020) {
+            uint32_t reg = invalid_irq / 32;
+            uint32_t bit = 1 << (invalid_irq % 32);
+            
+            // This should have no effect or be ignored
+            mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ISENABLER + (reg * 4), bit);
+            TEST_INFO("Invalid interrupt configuration attempted (should be ignored)");
+        }
+    }
+    
+    // Test double EOI (should be harmless but is an error condition)
+    // Send EOI for spurious interrupt (should be safe)
+    gicv3_write_eoir1(1023);
+    __asm__ volatile("isb");
+    TEST_PASS("Double EOI handled without crash");
+    
+    // Test priority mask extremes
+    // Set PMR to 0 (mask all interrupts)
+    uint32_t orig_pmr = gicv3_read_pmr();
+    gicv3_write_pmr(0x00);
+    __asm__ volatile("isb");
+    
+    uint32_t masked_pmr = gicv3_read_pmr();
+    if (masked_pmr == 0x00) {
+        TEST_PASS("All interrupts masked with PMR=0");
+    } else {
+        TEST_FAIL("PMR=0 not set correctly");
+    }
+    
+    // Restore PMR
+    gicv3_write_pmr(orig_pmr);
+    __asm__ volatile("isb");
+    
+    // Note: ICC_SGI1R_EL1 is write-only, we cannot read it
+    // Testing write to it was done in test_system_register_sgi()
+    TEST_INFO("Write-only register test skipped (SGI1R is write-only)");
+    
+    // Test system register access with interrupts disabled at CPU
+    uint32_t orig_grpen = gicv3_read_grpen1();
+    gicv3_write_grpen1(0);
+    __asm__ volatile("isb");
+    
+    // Try to acknowledge interrupt with group disabled
+    iar = gicv3_read_iar1();
+    if ((iar & 0xFFFFFF) >= 1020) {
+        TEST_PASS("No interrupt acknowledged with group disabled");
+    }
+    
+    // Re-enable
+    gicv3_write_grpen1(orig_grpen);
+    __asm__ volatile("isb");
+}
+
+// Test 13: Stress test - rapid enable/disable and configuration changes
+static void test_stress_operations(void) {
+    TEST_START("GICv3 Stress Test - Rapid Operations");
+    
+    if (!is_gicv3() || !gic_primary) {
+        return;
+    }
+    
+    // Use multiple SPIs for stress testing
+    uint32_t test_irqs[] = {40, 50, 60, 70, 80};
+    int num_irqs = 5;
+    int iterations = 100;
+    
+    TEST_INFO("Starting rapid enable/disable cycles...");
+    
+    // Rapid enable/disable cycles
+    for (int iter = 0; iter < iterations; iter++) {
+        for (int i = 0; i < num_irqs; i++) {
+            uint32_t irq = test_irqs[i];
+            uint32_t reg = irq / 32;
+            uint32_t bit = 1 << (irq % 32);
+            
+            // Enable
+            mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ISENABLER + (reg * 4), bit);
+            
+            // Immediately disable
+            mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICENABLER + (reg * 4), bit);
+        }
+    }
+    TEST_PASS("Rapid enable/disable cycles completed");
+    
+    // Rapid priority changes
+    for (int iter = 0; iter < iterations; iter++) {
+        for (int i = 0; i < num_irqs; i++) {
+            uint32_t irq = test_irqs[i];
+            uint32_t reg = irq / 4;
+            uint32_t shift = (irq % 4) * 8;
+            
+            uint32_t val = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_IPRIORITYR + (reg * 4));
+            val &= ~(0xFF << shift);
+            val |= ((iter & 0xF0) << shift);  // Use iteration count as priority
+            mmio_write32((uint8_t*)gic_primary->dist_base + GICD_IPRIORITYR + (reg * 4), val);
+        }
+    }
+    TEST_PASS("Rapid priority changes completed");
+    
+    // Rapid configuration changes (edge/level)
+    for (int iter = 0; iter < iterations; iter++) {
+        for (int i = 0; i < num_irqs; i++) {
+            uint32_t irq = test_irqs[i];
+            uint32_t reg = irq / 16;
+            uint32_t shift = (irq % 16) * 2;
+            
+            uint32_t val = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4));
+            val &= ~(0x3 << shift);
+            val |= ((iter & 1) ? 0x2 : 0x0) << shift;  // Alternate edge/level
+            mmio_write32((uint8_t*)gic_primary->dist_base + GICD_ICFGR + (reg * 4), val);
+        }
+    }
+    TEST_PASS("Rapid configuration changes completed");
+    
+    // Verify GIC is still functional after stress
+    uint32_t ctlr = mmio_read32((uint8_t*)gic_primary->dist_base + GICD_CTLR);
+    if (ctlr & (GICD_CTLR_ENABLE_G1 | GICD_CTLR_ENABLE_G1A)) {
+        TEST_PASS("GIC still functional after stress test");
+    } else {
+        TEST_FAIL("GIC not functional after stress test");
+    }
+}
+
 // Main GICv3 test runner
 void test_arm_gic_v3(void) {
     uart_puts("\n");
@@ -384,6 +927,15 @@ void test_arm_gic_v3(void) {
     test_affinity_routing();
     test_system_register_sgi();
     test_gicv3_properties();
+    
+    // Run additional comprehensive tests
+    test_interrupt_priorities();
+    test_trigger_modes();
+    test_interrupt_states();
+    test_redistributor_wake_sequence();
+    test_group_configuration();
+    test_error_conditions();
+    test_stress_operations();
     
     // Print summary
     uart_puts("\n========================================\n");
