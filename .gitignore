@@ -28,6 +28,9 @@ u-boot/
 .tmp/
 tmp/
 
+# Notes 
+/notes/
+
 # References 
 reference
 reference/
