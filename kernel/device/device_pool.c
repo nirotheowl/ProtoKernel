@@ -54,7 +54,7 @@ static struct {
 
 /* Initialize the device pool - must be called after PMM is initialized */
 bool device_pool_init(void) {
-    size_t pool_pages = 128;  /* 512KB pool to support device-rich platforms */
+    size_t pool_pages = 512;  /* 2MB pool to support very device-rich platforms */
     uint64_t phys_addr;
     pool_header_t *header;
     

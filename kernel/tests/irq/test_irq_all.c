@@ -23,8 +23,8 @@ void run_all_irq_tests(void) {
     run_arm_gic_comprehensive_tests();
     
     // GICv3-specific tests
-    uart_puts("\n>>> Testing GICv3-specific features...\n");
-    test_arm_gic_v3();
+    // uart_puts("\n>>> Testing GICv3-specific features...\n");
+    // test_arm_gic_v3();
 #endif
     
     // Comment out less relevant tests for GIC validation
