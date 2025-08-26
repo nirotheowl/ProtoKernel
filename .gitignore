@@ -32,9 +32,7 @@ tmp/
 /notes/
 
 # References 
-reference
-reference/
-reference/*
+/reference/
 
 # Documentation build
 docs/_build/
