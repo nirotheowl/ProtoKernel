@@ -260,6 +260,120 @@ void gic_disable(void) {
     }
 }
 
+// MSI SPI allocation - find and allocate contiguous SPIs for MSI
+int gic_msi_alloc_spi(struct gic_data *gic, uint32_t count, uint32_t *base_spi) {
+    if (!gic || !base_spi || count == 0) {
+        return -1;
+    }
+    
+    // Check if MSI is supported
+    if (!(gic->msi_flags & (GIC_MSI_FLAGS_V2M | GIC_MSI_FLAGS_MBI))) {
+        uart_puts("GIC: MSI not supported\n");
+        return -1;
+    }
+    
+    if (!gic->msi_bitmap || gic->msi_spi_count == 0) {
+        uart_puts("GIC: MSI not initialized\n");
+        return -1;
+    }
+    
+    // TODO: Add locking/synchronization for SMP safety
+    // TODO: Support non-contiguous allocation for MSI-X (each vector separate)
+    // TODO: Add CPU affinity hints for optimal interrupt routing
+    // TODO: Reserve SPIs that might be used by firmware/secure world
+    
+    // Find contiguous free SPIs
+    uint32_t found = 0;
+    uint32_t start = 0;
+    
+    for (uint32_t i = 0; i < gic->msi_spi_count; i++) {
+        uint32_t word = i / 32;
+        uint32_t bit = i % 32;
+        
+        if (!(gic->msi_bitmap[word] & (1 << bit))) {
+            // This SPI is free
+            if (found == 0) {
+                start = i;
+            }
+            found++;
+            
+            if (found == count) {
+                // Found enough contiguous SPIs
+                // Mark them as allocated
+                for (uint32_t j = 0; j < count; j++) {
+                    uint32_t idx = start + j;
+                    uint32_t w = idx / 32;
+                    uint32_t b = idx % 32;
+                    gic->msi_bitmap[w] |= (1 << b);
+                }
+                
+                *base_spi = gic->msi_spi_base + start;
+                
+                // Configure the allocated SPIs
+                for (uint32_t j = 0; j < count; j++) {
+                    uint32_t spi = *base_spi + j;
+                    // Set to edge-triggered (MSIs are always edge)
+                    if (gic->ops && gic->ops->set_config) {
+                        gic->ops->set_config(gic, spi, 0x2);
+                    }
+                    // Set default priority
+                    if (gic->ops && gic->ops->set_priority) {
+                        gic->ops->set_priority(gic, spi, GIC_PRIORITY_DEFAULT);
+                    }
+                    // Enable the SPI
+                    if (gic->ops && gic->ops->unmask_irq) {
+                        gic->ops->unmask_irq(gic, spi);
+                    }
+                }
+                
+                return 0;
+            }
+        } else {
+            // This SPI is allocated, reset search
+            found = 0;
+        }
+    }
+    
+    uart_puts("GIC: No free SPIs available for MSI\n");
+    return -1;
+}
+
+// MSI SPI deallocation - free previously allocated SPIs
+void gic_msi_free_spi(struct gic_data *gic, uint32_t base_spi, uint32_t count) {
+    if (!gic || count == 0) {
+        return;
+    }
+    
+    // Validate the range
+    if (base_spi < gic->msi_spi_base || 
+        base_spi + count > gic->msi_spi_base + gic->msi_spi_count) {
+        uart_puts("GIC: Invalid SPI range for free\n");
+        return;
+    }
+    
+    // TODO: Add locking for SMP safety
+    // TODO: Ensure no pending interrupts before freeing
+    // TODO: Clear any affinity routing settings
+    
+    uint32_t start = base_spi - gic->msi_spi_base;
+    
+    // Disable and clear the SPIs
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t spi = base_spi + i;
+        
+        // Mask (disable) the SPI
+        if (gic->ops && gic->ops->mask_irq) {
+            gic->ops->mask_irq(gic, spi);
+        }
+        
+        // Clear from bitmap
+        uint32_t idx = start + i;
+        uint32_t word = idx / 32;
+        uint32_t bit = idx % 32;
+        gic->msi_bitmap[word] &= ~(1 << bit);
+    }
+}
+
 // Initialize GIC (called after probe)
 int gic_init(void) {
     if (!gic_primary) {

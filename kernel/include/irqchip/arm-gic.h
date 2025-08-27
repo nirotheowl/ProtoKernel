@@ -218,6 +218,10 @@ static inline void gic_irq_reg_pos(uint32_t hwirq, uint32_t *reg, uint32_t *bit)
 extern const struct gic_ops gicv2_ops;
 extern const struct gic_ops gicv3_ops;
 
+// MSI SPI allocation functions
+int gic_msi_alloc_spi(struct gic_data *gic, uint32_t count, uint32_t *base_spi);
+void gic_msi_free_spi(struct gic_data *gic, uint32_t base_spi, uint32_t count);
+
 // GIC initialization and management
 int gic_init(void);
 int gic_probe(struct device *dev);
