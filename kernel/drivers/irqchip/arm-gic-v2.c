@@ -10,12 +10,23 @@
 #include <uart.h>
 #include <arch_io.h>
 #include <stddef.h>
+#include <memory/kmalloc.h>
+#include <drivers/fdt.h>
+#include <drivers/fdt_mgr.h>
+#include <device/device.h>
+#include <string.h>
 
 // GICv2-specific CPU interface register access
 #define gic_cpu_read(gic, offset) \
     mmio_read32((uint8_t*)(gic)->cpu_base + (offset))
 #define gic_cpu_write(gic, offset, val) \
     mmio_write32((uint8_t*)(gic)->cpu_base + (offset), (val))
+
+// Forward declarations
+static int gicv2_msi_init(struct gic_data *gic);
+static void gicv2_msi_compose_msg(struct gic_data *gic, uint32_t hwirq,
+                                  uint32_t *addr_hi, uint32_t *addr_lo,
+                                  uint32_t *data);
 
 // GICv2 distributor initialization
 static void gicv2_dist_init(struct gic_data *gic) {
@@ -110,6 +121,9 @@ static int gicv2_init(struct gic_data *gic) {
     
     // Initialize CPU interface
     gicv2_cpu_init(gic);
+    
+    // Try to initialize MSI support
+    gicv2_msi_init(gic);
     
     uart_puts("GICv2: Initialization complete\n");
     return 0;
@@ -211,6 +225,146 @@ static void gicv2_disable(struct gic_data *gic) {
     gic_dist_write(gic, GICD_CTLR, 0);
 }
 
+// GICv2 MSI initialization
+static int gicv2_msi_init(struct gic_data *gic) {
+    // Check if GICv2m hardware is present
+    // GICv2m is a separate device with compatible = "arm,gic-v2m-frame"
+    
+    // Search for GICv2m devices in the device pool
+    struct device *v2m_dev = device_find_by_compatible("arm,gic-v2m-frame");
+    
+    if (!v2m_dev) {
+        uart_puts("GICv2: No GICv2m frame found in device tree\n");
+        return -1;
+    }
+    
+    uart_puts("GICv2: Found GICv2m frame device: ");
+    uart_puts(v2m_dev->name);
+    uart_puts("\n");
+    
+    // Get the v2m base address from its resources
+    struct resource *v2m_res = NULL;
+    for (int i = 0; i < v2m_dev->num_resources; i++) {
+        if (v2m_dev->resources[i].type == RES_TYPE_MEM) {
+            v2m_res = &v2m_dev->resources[i];
+            break;
+        }
+    }
+    
+    if (!v2m_res) {
+        uart_puts("GICv2m: No memory resource found\n");
+        return -1;
+    }
+    
+    // Use mapped virtual address, not physical address
+    void *v2m_base = v2m_res->mapped_addr;
+    if (!v2m_base) {
+        uart_puts("GICv2m: Memory resource not mapped\n");
+        return -1;
+    }
+    
+    // Read MSI_TYPER to get SPI range
+    uint32_t typer = mmio_read32((uint8_t*)v2m_base + V2M_MSI_TYPER);
+    uint32_t base_spi = V2M_MSI_TYPER_BASE_SPI(typer);
+    uint32_t num_spi = V2M_MSI_TYPER_NUM_SPI(typer);
+    
+    // Check device tree for overrides
+    void *fdt = fdt_mgr_get_blob();
+    if (fdt && v2m_dev->fdt_offset) {
+        int len;
+        
+        // Check for arm,msi-base-spi override
+        const uint32_t *dt_base = fdt_getprop(fdt, v2m_dev->fdt_offset, 
+                                              "arm,msi-base-spi", &len);
+        if (dt_base && len == sizeof(uint32_t)) {
+            base_spi = fdt32_to_cpu(*dt_base);
+            uart_puts("GICv2m: DT override msi-base-spi: ");
+            uart_putdec(base_spi);
+            uart_puts("\n");
+        }
+        
+        // Check for arm,msi-num-spis override
+        const uint32_t *dt_num = fdt_getprop(fdt, v2m_dev->fdt_offset,
+                                             "arm,msi-num-spis", &len);
+        if (dt_num && len == sizeof(uint32_t)) {
+            num_spi = fdt32_to_cpu(*dt_num);
+            uart_puts("GICv2m: DT override msi-num-spis: ");
+            uart_putdec(num_spi);
+            uart_puts("\n");
+        }
+    }
+    
+    // Validate SPI range
+    if (base_spi < GIC_SPI_BASE || base_spi >= 1020 || 
+        num_spi == 0 || num_spi > 480) {
+        uart_puts("GICv2m: Invalid SPI range\n");
+        return -1;
+    }
+    
+    // Configure GICv2m
+    gic->msi_flags |= GIC_MSI_FLAGS_V2M;
+    gic->msi_typer = typer;
+    gic->msi_spi_base = base_spi;
+    gic->msi_spi_count = num_spi;
+    // MSI doorbell address must be physical - that's what devices write to
+    gic->msi_doorbell_addr = v2m_res->start + V2M_MSI_SETSPI_NS;
+    // Keep virtual address for any kernel access we might need
+    gic->msi_doorbell_virt = (uint8_t*)v2m_base + V2M_MSI_SETSPI_NS;
+    
+    // Allocate bitmap for SPI tracking
+    gic->msi_bitmap_size = (num_spi + 31) / 32;
+    gic->msi_bitmap = (uint32_t*)kmalloc(gic->msi_bitmap_size * sizeof(uint32_t), 0);
+    
+    if (!gic->msi_bitmap) {
+        uart_puts("GICv2m: Failed to allocate MSI bitmap\n");
+        gic->msi_flags &= ~GIC_MSI_FLAGS_V2M;
+        return -1;
+    }
+    
+    // Initialize bitmap - all SPIs initially free
+    for (uint32_t i = 0; i < gic->msi_bitmap_size; i++) {
+        gic->msi_bitmap[i] = 0;
+    }
+    
+    uart_puts("GICv2m: MSI controller initialized\n");
+    uart_puts("GICv2m: Base SPI: ");
+    uart_putdec(base_spi);
+    uart_puts(", Count: ");
+    uart_putdec(num_spi);
+    uart_puts("\n");
+    uart_puts("GICv2m: Doorbell at ");
+    uart_puthex(gic->msi_doorbell_addr);
+    uart_puts("\n");
+    
+    // Mark SPIs as edge-triggered for MSI
+    for (uint32_t i = 0; i < num_spi; i++) {
+        gicv2_set_config(gic, base_spi + i, 0x2);  // Edge-triggered
+    }
+    
+    return 0;
+}
+
+// GICv2 MSI message composition
+static void gicv2_msi_compose_msg(struct gic_data *gic, uint32_t hwirq,
+                                  uint32_t *addr_hi, uint32_t *addr_lo,
+                                  uint32_t *data) {
+    if (!gic || !addr_hi || !addr_lo || !data) {
+        return;
+    }
+    
+    if (gic->msi_flags & GIC_MSI_FLAGS_V2M) {
+        // GICv2m: Write to SETSPI_NS register with SPI number as data
+        *addr_lo = (uint32_t)(gic->msi_doorbell_addr & 0xFFFFFFFF);
+        *addr_hi = (uint32_t)(gic->msi_doorbell_addr >> 32);
+        *data = hwirq;  // SPI number
+    } else {
+        // No MSI support
+        *addr_hi = 0;
+        *addr_lo = 0;
+        *data = 0;
+    }
+}
+
 // GICv2 operations structure
 const struct gic_ops gicv2_ops = {
     .init = gicv2_init,
@@ -226,6 +380,8 @@ const struct gic_ops gicv2_ops = {
     .send_sgi = gicv2_send_sgi,
     .enable = gicv2_enable,
     .disable = gicv2_disable,
+    .msi_init = gicv2_msi_init,
+    .msi_compose_msg = gicv2_msi_compose_msg,
 };
 
 #endif /* __aarch64__ */

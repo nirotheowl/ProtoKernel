@@ -11,12 +11,21 @@
 #include <uart.h>
 #include <arch_io.h>
 #include <stddef.h>
+#include <memory/kmalloc.h>
+#include <drivers/fdt.h>
+#include <drivers/fdt_mgr.h>
 
 // GICv3 Redistributor register access macros
 #define gic_redist_read(addr, offset) \
     mmio_read32((uint8_t*)(addr) + (offset))
 #define gic_redist_write(addr, offset, val) \
     mmio_write32((uint8_t*)(addr) + (offset), (val))
+
+// Forward declarations
+static int gicv3_msi_init(struct gic_data *gic);
+static void gicv3_msi_compose_msg(struct gic_data *gic, uint32_t hwirq,
+                                  uint32_t *addr_hi, uint32_t *addr_lo,
+                                  uint32_t *data);
 
 #define gic_redist_read64(addr, offset) \
     mmio_read64((uint8_t*)(addr) + (offset))
@@ -332,6 +341,9 @@ static int gicv3_init(struct gic_data *gic) {
         return -1;
     }
     
+    // Try to initialize MSI support
+    gicv3_msi_init(gic);
+    
     uart_puts("GICv3: Initialization complete\n");
     return 0;
 }
@@ -527,6 +539,156 @@ static void gicv3_disable(struct gic_data *gic) {
     __asm__ volatile("isb");
 }
 
+// GICv3 MSI initialization
+static int gicv3_msi_init(struct gic_data *gic) {
+    // Check if GICv3 supports MBI (Message Based Interrupts)
+    // by reading the MBIS bit in GICD_TYPER
+    
+    uint32_t typer = gic_dist_read(gic, GICD_TYPER);
+    uint32_t num_spis = ((typer & 0x1F) + 1) * 32;
+    
+    // Check MBIS bit (bit 16) - indicates MBI support
+    if (!(typer & GICD_TYPER_MBIS)) {
+        uart_puts("GICv3: No MBI support detected (TYPER.MBIS=0)\n");
+        
+        // Check for ITS (future enhancement)
+        if (gic->its_base) {
+            uart_puts("GICv3: ITS detected but not yet supported\n");
+        }
+        return -1;
+    }
+    
+    // Check device tree for MSI controller properties
+    bool is_msi_controller = false;
+    uint32_t msi_base_spi = 0;
+    uint32_t msi_num_spis = 0;
+    
+    // Use device's FDT offset to check properties
+    if (gic->dev && gic->dev->fdt_offset) {
+        // Get FDT blob pointer from FDT manager
+        void *fdt = fdt_mgr_get_blob();
+        if (!fdt) {
+            uart_puts("GICv3: Failed to get FDT blob\n");
+        } else {
+            int node_offset = gic->dev->fdt_offset;
+            
+            // Check for "msi-controller" property
+            int len;
+            const void *prop = fdt_getprop(fdt, node_offset, "msi-controller", &len);
+            if (prop) {
+                is_msi_controller = true;
+                uart_puts("GICv3: Found msi-controller property in device tree\n");
+            }
+            
+            // Check for MSI SPI range properties (vendor specific)
+            const uint32_t *msi_base = fdt_getprop(fdt, node_offset, "arm,msi-base-spi", &len);
+            if (msi_base && len == sizeof(uint32_t)) {
+                msi_base_spi = fdt32_to_cpu(*msi_base);
+                uart_puts("GICv3: Found msi-base-spi: ");
+                uart_putdec(msi_base_spi);
+                uart_puts("\n");
+            }
+            
+            const uint32_t *msi_num = fdt_getprop(fdt, node_offset, "arm,msi-num-spis", &len);
+            if (msi_num && len == sizeof(uint32_t)) {
+                msi_num_spis = fdt32_to_cpu(*msi_num);
+                uart_puts("GICv3: Found msi-num-spis: ");
+                uart_putdec(msi_num_spis);
+                uart_puts("\n");
+            }
+        }
+    }
+    
+    // MBI is supported!
+    gic->msi_flags |= GIC_MSI_FLAGS_MBI;
+    gic->msi_doorbell_addr = (uint64_t)gic->dist_base + GICD_SETSPI_NSR;
+    
+    // Determine MSI SPI range
+    uint32_t total_spis = num_spis - GIC_SPI_BASE;
+    
+    if (msi_base_spi && msi_num_spis) {
+        // Use device tree specified range
+        gic->msi_spi_base = msi_base_spi;
+        gic->msi_spi_count = msi_num_spis;
+    } else {
+        // Default: reserve upper half of SPIs for MSI
+        gic->msi_spi_base = GIC_SPI_BASE + (total_spis / 2);
+        gic->msi_spi_count = total_spis / 2;
+    }
+    
+    // Validate the range
+    if (gic->msi_spi_base < GIC_SPI_BASE || 
+        gic->msi_spi_base + gic->msi_spi_count > num_spis) {
+        uart_puts("GICv3: Invalid MSI SPI range\n");
+        gic->msi_flags &= ~GIC_MSI_FLAGS_MBI;
+        return -1;
+    }
+    
+    // Allocate bitmap for SPI tracking (1 bit per SPI)
+    gic->msi_bitmap_size = (gic->msi_spi_count + 31) / 32;  // Round up to words
+    gic->msi_bitmap = (uint32_t*)kmalloc(gic->msi_bitmap_size * sizeof(uint32_t), 0);
+    
+    if (!gic->msi_bitmap) {
+        uart_puts("GICv3: Failed to allocate MSI bitmap\n");
+        gic->msi_flags &= ~GIC_MSI_FLAGS_MBI;
+        return -1;
+    }
+    
+    // Initialize bitmap - all SPIs initially free (set to 0)
+    for (uint32_t i = 0; i < gic->msi_bitmap_size; i++) {
+        gic->msi_bitmap[i] = 0;
+    }
+    
+    uart_puts("GICv3: MBI support enabled");
+    if (is_msi_controller) {
+        uart_puts(" (msi-controller)");
+    }
+    uart_puts("\n");
+    uart_puts("GICv3: MSI SPI range: ");
+    uart_putdec(gic->msi_spi_base);
+    uart_puts(" - ");
+    uart_putdec(gic->msi_spi_base + gic->msi_spi_count - 1);
+    uart_puts(" (");
+    uart_putdec(gic->msi_spi_count);
+    uart_puts(" SPIs)\n");
+    
+    // Mark SPIs as edge-triggered for MSI
+    // MSIs are always edge-triggered
+    for (uint32_t i = 0; i < gic->msi_spi_count; i++) {
+        uint32_t spi = gic->msi_spi_base + i;
+        gicv3_set_config(gic, spi, 0x2);  // Edge-triggered
+    }
+    
+    return 0;
+}
+
+// GICv3 MSI message composition
+static void gicv3_msi_compose_msg(struct gic_data *gic, uint32_t hwirq,
+                                  uint32_t *addr_hi, uint32_t *addr_lo,
+                                  uint32_t *data) {
+    if (!gic || !addr_hi || !addr_lo || !data) {
+        return;
+    }
+    
+    if (gic->msi_flags & GIC_MSI_FLAGS_MBI) {
+        // GICv3 MBI: Write to GICD_SETSPI_NSR with SPI number as data
+        *addr_lo = (uint32_t)(gic->msi_doorbell_addr & 0xFFFFFFFF);
+        *addr_hi = (uint32_t)(gic->msi_doorbell_addr >> 32);
+        *data = hwirq;  // SPI number
+    } else if (gic->msi_flags & GIC_MSI_FLAGS_ITS) {
+        // Future: ITS-based MSI composition
+        // Would use ITS_TRANSLATER register
+        *addr_hi = 0;
+        *addr_lo = 0;
+        *data = 0;
+    } else {
+        // No MSI support
+        *addr_hi = 0;
+        *addr_lo = 0;
+        *data = 0;
+    }
+}
+
 // GICv3 operations structure
 const struct gic_ops gicv3_ops = {
     .init = gicv3_init,
@@ -542,6 +704,8 @@ const struct gic_ops gicv3_ops = {
     .send_sgi = gicv3_send_sgi,
     .enable = gicv3_enable,
     .disable = gicv3_disable,
+    .msi_init = gicv3_msi_init,
+    .msi_compose_msg = gicv3_msi_compose_msg,
 };
 
 #endif /* __aarch64__ */

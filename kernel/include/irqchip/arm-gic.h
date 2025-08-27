@@ -50,6 +50,11 @@ struct gic_ops {
     // Enable/disable
     void (*enable)(struct gic_data *gic);
     void (*disable)(struct gic_data *gic);
+    
+    // MSI support
+    int (*msi_init)(struct gic_data *gic);
+    void (*msi_compose_msg)(struct gic_data *gic, uint32_t hwirq, 
+                           uint32_t *addr_hi, uint32_t *addr_lo, uint32_t *data);
 };
 
 // GIC data structure
@@ -79,11 +84,24 @@ struct gic_data {
     uint64_t *lpi_config_table; // LPI configuration (unused initially)
     uint64_t *lpi_pending_table;// LPI pending bits (unused initially)
     uint32_t nr_lpis;           // Number of LPIs (unused initially)
+    
+    // MSI support
+    uint64_t msi_doorbell_addr;     // Physical address for MSI doorbell
+    uint32_t msi_spi_base;          // Base SPI for MSI allocation
+    uint32_t msi_spi_count;         // Number of SPIs available for MSI
+    void *msi_doorbell_virt;        // Virtual mapping of doorbell region
+    uint32_t msi_typer;             // GICv2m MSI_TYPER register value
+    uint32_t msi_flags;             // MSI implementation flags
+    
+    // MSI SPI allocation tracking
+    uint32_t *msi_bitmap;           // Bitmap for MSI SPI allocation
+    uint32_t msi_bitmap_size;       // Size of bitmap in words
 };
 
 // Common GIC distributor registers (same offset for v2/v3)
 #define GICD_CTLR       0x0000  // Distributor Control Register
 #define GICD_TYPER      0x0004  // Interrupt Controller Type Register
+#define GICD_TYPER_MBIS (1U << 16)  // Message Based Interrupt Support (GICv3)
 #define GICD_IIDR       0x0008  // Distributor Implementer Identification Register
 #define GICD_IGROUPR    0x0080  // Interrupt Group Registers
 #define GICD_ISENABLER  0x0100  // Interrupt Set-Enable Registers
@@ -154,6 +172,31 @@ struct gic_data {
 
 // Special interrupt IDs
 #define GIC_SPURIOUS_IRQ        1023
+
+// MSI/MBI registers (GICv3 only, but defined here for consistency)
+#define GICD_SETSPI_NSR         0x0040  // Set SPI Non-secure Register
+#define GICD_CLRSPI_NSR         0x0048  // Clear SPI Non-secure Register
+#define GICD_SETSPI_SR          0x0050  // Set SPI Secure Register
+#define GICD_CLRSPI_SR          0x0058  // Clear SPI Secure Register
+
+// GICv2m MSI registers (when available)
+#define V2M_MSI_TYPER           0x0008  // MSI Type Register
+#define V2M_MSI_SETSPI_NS       0x0040  // MSI Set SPI Non-secure
+#define V2M_MSI_IIDR            0x0FCC  // MSI Interface ID Register
+
+// MSI capability flags
+#define GIC_MSI_FLAGS_NONE      0x00000000
+#define GIC_MSI_FLAGS_V2M       0x00000001  // GICv2m hardware present
+#define GIC_MSI_FLAGS_MBI       0x00000002  // GICv3 MBI support
+#define GIC_MSI_FLAGS_ITS       0x00000004  // GICv3 ITS present (future)
+#define GIC_MSI_FLAGS_EMULATED  0x00000008  // Using emulated MSI
+
+// V2M MSI_TYPER field extraction
+#define V2M_MSI_TYPER_BASE_SHIFT    16
+#define V2M_MSI_TYPER_BASE_MASK     0x3FF
+#define V2M_MSI_TYPER_NUM_MASK      0x3FF
+#define V2M_MSI_TYPER_BASE_SPI(x)   (((x) >> V2M_MSI_TYPER_BASE_SHIFT) & V2M_MSI_TYPER_BASE_MASK)
+#define V2M_MSI_TYPER_NUM_SPI(x)    ((x) & V2M_MSI_TYPER_NUM_MASK)
 
 // Helper macros for register access
 #define gic_dist_read(gic, offset) \

@@ -9,6 +9,7 @@
 
 #include <irqchip/arm-gic.h>
 #include <irq/irq.h>
+#include <irq/msi.h>
 #include <device/device.h>
 #include <device/resource.h>
 #include <drivers/driver.h>
@@ -29,6 +30,7 @@ static void gic_irq_mask(struct irq_desc *desc);
 static void gic_irq_unmask(struct irq_desc *desc);
 static void gic_irq_eoi(struct irq_desc *desc);
 static int gic_irq_set_type(struct irq_desc *desc, uint32_t type);
+static void gic_irq_compose_msi_msg(struct irq_desc *desc, struct msi_msg *msg);
 
 // IRQ chip operations - common wrapper for all GIC versions
 static struct irq_chip gic_chip = {
@@ -39,6 +41,7 @@ static struct irq_chip gic_chip = {
     .irq_set_type = gic_irq_set_type,
     .irq_enable = gic_irq_unmask,  // Enable is same as unmask
     .irq_disable = gic_irq_mask,   // Disable is same as mask
+    .irq_compose_msi_msg = gic_irq_compose_msi_msg,
     .flags = 0,
 };
 
@@ -85,6 +88,25 @@ static int gic_irq_set_type(struct irq_desc *desc, uint32_t type) {
     
     gic_primary->ops->set_config(gic_primary, desc->hwirq, config);
     return 0;
+}
+
+static void gic_irq_compose_msi_msg(struct irq_desc *desc, struct msi_msg *msg) {
+    if (!desc || !msg || !gic_primary) {
+        return;
+    }
+    
+    // Clear the message first
+    msg->address_lo = 0;
+    msg->address_hi = 0;
+    msg->data = 0;
+    
+    // Use version-specific MSI compose if available
+    if (gic_primary->ops && gic_primary->ops->msi_compose_msg) {
+        gic_primary->ops->msi_compose_msg(gic_primary, desc->hwirq,
+                                         &msg->address_hi, &msg->address_lo,
+                                         &msg->data);
+    }
+    // If no MSI support in the driver, message remains zeroed
 }
 
 // Domain operations implementation
