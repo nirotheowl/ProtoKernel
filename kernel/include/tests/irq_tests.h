@@ -40,4 +40,7 @@ void test_radix_tree_all(void);
 // Comprehensive tree domain tests for MSI support
 void test_tree_domains_comprehensive(void);
 
+// MSI descriptor tests
+void test_msi_descriptors(void);
+
 #endif /* _IRQ_TESTS_H */

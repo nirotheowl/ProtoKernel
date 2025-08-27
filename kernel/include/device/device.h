@@ -74,6 +74,9 @@ struct device {
     bool                active;                     // Device is active/probed
     bool                suspended;                  // Device is suspended
     uint32_t            flags;                      // Device-specific flags
+    
+    // MSI support
+    struct msi_device_data *msi_data;               // MSI descriptor data
 };
 
 // Device flags

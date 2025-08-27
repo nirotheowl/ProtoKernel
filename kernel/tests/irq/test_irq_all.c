@@ -51,6 +51,10 @@ void run_all_irq_tests(void) {
     test_tree_domains_comprehensive();
     */
     
+    // MSI descriptor tests
+    uart_puts("\n>>> Testing MSI Descriptors...\n");
+    test_msi_descriptors();
+    
     uart_puts("\n");
     uart_puts("================================================================\n");
     uart_puts("                    ALL TESTS COMPLETE\n");
