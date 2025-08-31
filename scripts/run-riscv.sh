@@ -15,7 +15,7 @@ echo "Starting QEMU with direct kernel boot..."
 echo "Press Ctrl-A X to exit QEMU"
 
 qemu-system-riscv64 \
-    -M virt \
+    -M virt,aia=aplic-imsic \
     -bios default \
     -m 1G \
     -nographic \

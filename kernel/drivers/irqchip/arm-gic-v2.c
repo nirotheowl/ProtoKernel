@@ -365,6 +365,71 @@ static void gicv2_msi_compose_msg(struct gic_data *gic, uint32_t hwirq,
     }
 }
 
+// GICv2m MSI doorbell handler - handles MSI writes to trigger interrupts
+// This simulates what happens when a device writes to the doorbell address
+void gicv2_msi_doorbell_write(struct gic_data *gic, uint64_t addr, uint32_t data) {
+    if (!gic || !(gic->msi_flags & GIC_MSI_FLAGS_V2M)) {
+        return;
+    }
+    
+    // Check if write is to our doorbell address
+    if (addr != gic->msi_doorbell_addr) {
+        return;
+    }
+    
+    // Validate SPI is in allocated range
+    if (data < gic->msi_spi_base || 
+        data >= gic->msi_spi_base + gic->msi_spi_count) {
+        uart_puts("GICv2m: Invalid SPI ");
+        uart_putdec(data);
+        uart_puts(" in doorbell write\n");
+        return;
+    }
+    
+    // In real GICv2m hardware, writing to SETSPI_NS automatically:
+    // 1. Sets the pending bit for the SPI
+    // 2. Targets it to the appropriate CPU
+    // 3. Triggers the interrupt if enabled
+    
+    // For our simulation, manually set the pending bit
+    if (gic->dist_base) {
+        uint32_t reg = data / 32;
+        uint32_t bit = data % 32;
+        uint32_t pending_reg = GICD_ISPENDR + (reg * 4);
+        mmio_write32((uint8_t*)gic->dist_base + pending_reg, 1 << bit);
+    }
+}
+
+// GICv2 MSI doorbell test helper - simulate an MSI write for testing
+int gicv2_msi_test_doorbell(struct gic_data *gic, uint32_t spi_num) {
+    if (!gic || !(gic->msi_flags & GIC_MSI_FLAGS_V2M)) {
+        uart_puts("GICv2m: MSI not supported\n");
+        return -1;
+    }
+    
+    // Validate SPI is in MSI range
+    if (spi_num < gic->msi_spi_base || 
+        spi_num >= gic->msi_spi_base + gic->msi_spi_count) {
+        uart_puts("GICv2m: SPI ");
+        uart_putdec(spi_num);
+        uart_puts(" not in MSI range [");
+        uart_putdec(gic->msi_spi_base);
+        uart_puts("-");
+        uart_putdec(gic->msi_spi_base + gic->msi_spi_count - 1);
+        uart_puts("]\n");
+        return -1;
+    }
+    
+    // Simulate the doorbell write
+    gicv2_msi_doorbell_write(gic, gic->msi_doorbell_addr, spi_num);
+    
+    uart_puts("GICv2m: Simulated MSI doorbell for SPI ");
+    uart_putdec(spi_num);
+    uart_puts("\n");
+    
+    return 0;
+}
+
 // GICv2 operations structure
 const struct gic_ops gicv2_ops = {
     .init = gicv2_init,

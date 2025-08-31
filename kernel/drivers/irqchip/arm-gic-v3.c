@@ -689,6 +689,68 @@ static void gicv3_msi_compose_msg(struct gic_data *gic, uint32_t hwirq,
     }
 }
 
+// GICv3 MBI doorbell handler - handles MSI writes to trigger interrupts
+// This simulates what happens when a device writes to the doorbell address
+void gicv3_msi_doorbell_write(struct gic_data *gic, uint64_t addr, uint32_t data) {
+    if (!gic || !(gic->msi_flags & GIC_MSI_FLAGS_MBI)) {
+        return;
+    }
+    
+    // Check if write is to our doorbell address (GICD_SETSPI_NSR)
+    if (addr != gic->msi_doorbell_addr) {
+        return;
+    }
+    
+    // Validate SPI is in allocated range
+    if (data < gic->msi_spi_base || 
+        data >= gic->msi_spi_base + gic->msi_spi_count) {
+        uart_puts("GICv3 MBI: Invalid SPI ");
+        uart_putdec(data);
+        uart_puts(" in doorbell write\n");
+        return;
+    }
+    
+    // In real GICv3 MBI hardware, writing to GICD_SETSPI_NSR:
+    // 1. Sets the pending bit for the SPI
+    // 2. Routes it based on affinity settings
+    // 3. Triggers the interrupt if enabled
+    
+    // Write to GICD_SETSPI_NSR to trigger the SPI
+    if (gic->dist_base) {
+        mmio_write32((uint8_t*)gic->dist_base + GICD_SETSPI_NSR, data);
+    }
+}
+
+// GICv3 MBI doorbell test helper - simulate an MSI write for testing
+int gicv3_msi_test_doorbell(struct gic_data *gic, uint32_t spi_num) {
+    if (!gic || !(gic->msi_flags & GIC_MSI_FLAGS_MBI)) {
+        uart_puts("GICv3 MBI: MSI not supported\n");
+        return -1;
+    }
+    
+    // Validate SPI is in MSI range
+    if (spi_num < gic->msi_spi_base || 
+        spi_num >= gic->msi_spi_base + gic->msi_spi_count) {
+        uart_puts("GICv3 MBI: SPI ");
+        uart_putdec(spi_num);
+        uart_puts(" not in MSI range [");
+        uart_putdec(gic->msi_spi_base);
+        uart_puts("-");
+        uart_putdec(gic->msi_spi_base + gic->msi_spi_count - 1);
+        uart_puts("]\n");
+        return -1;
+    }
+    
+    // Simulate the doorbell write
+    gicv3_msi_doorbell_write(gic, gic->msi_doorbell_addr, spi_num);
+    
+    uart_puts("GICv3 MBI: Simulated MSI doorbell for SPI ");
+    uart_putdec(spi_num);
+    uart_puts("\n");
+    
+    return 0;
+}
+
 // GICv3 operations structure
 const struct gic_ops gicv3_ops = {
     .init = gicv3_init,

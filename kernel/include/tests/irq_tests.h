@@ -43,4 +43,7 @@ void test_tree_domains_comprehensive(void);
 // MSI descriptor tests
 void test_msi_descriptors(void);
 
+// MSI SPI allocation tests
+int test_msi_spi_allocation(void);
+
 #endif /* _IRQ_TESTS_H */

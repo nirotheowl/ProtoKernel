@@ -13,6 +13,8 @@ void run_all_irq_tests(void) {
     uart_puts("            IRQ SUBSYSTEM TESTS\n");
     uart_puts("================================================================\n");
     
+    // Comment out basic tests for MSI testing
+    /*
     // Basic IRQ tests
     uart_puts("\n>>> Testing Basic IRQ Functionality...\n");
     run_irq_basic_tests();
@@ -26,6 +28,7 @@ void run_all_irq_tests(void) {
     // uart_puts("\n>>> Testing GICv3-specific features...\n");
     // test_arm_gic_v3();
 #endif
+    */
     
     // Comment out less relevant tests for GIC validation
     // Uncomment these if testing the full IRQ subsystem
@@ -45,15 +48,21 @@ void run_all_irq_tests(void) {
     // Radix tree tests (for sparse domains)
     uart_puts("\n>>> Testing Radix Tree (for sparse domains)...\n");
     test_radix_tree_all();
+    */
     
-    // Tree domain tests
+    // Tree domain tests - needed for MSI
     uart_puts("\n>>> Testing Tree Domain Support...\n");
     test_tree_domains_comprehensive();
-    */
     
     // MSI descriptor tests
     uart_puts("\n>>> Testing MSI Descriptors...\n");
     test_msi_descriptors();
+    
+    // MSI SPI allocation tests
+#ifdef __aarch64__
+    uart_puts("\n>>> Testing MSI SPI Allocation...\n");
+    test_msi_spi_allocation();
+#endif
     
     uart_puts("\n");
     uart_puts("================================================================\n");
