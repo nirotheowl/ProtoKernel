@@ -14,6 +14,8 @@ fi
 echo "Starting QEMU with direct kernel boot..."
 echo "Press Ctrl-A X to exit QEMU"
 
+# Using aia=aplic-imsic to test with MSI-capable hardware
+# The APLIC driver will configure it for direct mode until MSI is implemented
 qemu-system-riscv64 \
     -M virt,aia=aplic-imsic \
     -bios default \

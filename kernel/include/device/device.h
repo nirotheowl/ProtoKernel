@@ -147,4 +147,10 @@ struct resource *device_get_resource(struct device *dev, resource_type_t type, i
 int device_get_clock_freq(struct device *dev, int index);
 int device_register_fdt(struct device *dev, int fdt_offset);
 
+// Generic property access
+const void *device_get_property(struct device *dev, const char *name, int *len);
+uint32_t device_get_property_u32(struct device *dev, const char *name, uint32_t default_val);
+bool device_get_property_bool(struct device *dev, const char *name);
+int device_get_property_string(struct device *dev, const char *name, char *buf, size_t buflen);
+
 #endif // __DEVICE_H

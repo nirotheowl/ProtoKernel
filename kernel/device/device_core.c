@@ -9,6 +9,8 @@
 #include <device/resource.h>
 #include <string.h>
 #include <uart.h>
+#include <drivers/fdt.h>
+#include <drivers/fdt_mgr.h>
 
 /* Forward declarations for device pool functions */
 extern struct device *device_pool_alloc_device(void);
@@ -519,6 +521,74 @@ int device_get_clock_freq(struct device *dev, int index) {
     /* TODO: Implement clock frequency extraction from FDT */
     (void)dev;
     (void)index;
+    return 0;
+}
+
+// Generic property access implementation
+const void *device_get_property(struct device *dev, const char *name, int *len) {
+    if (!dev || !name) {
+        if (len) *len = 0;
+        return NULL;
+    }
+    
+    // Check if device has FDT offset
+    if (dev->fdt_offset < 0) {
+        if (len) *len = 0;
+        return NULL;
+    }
+    
+    // Get FDT blob from manager
+    void *fdt = fdt_mgr_get_blob();
+    if (!fdt) {
+        if (len) *len = 0;
+        return NULL;
+    }
+    
+    // Get property from FDT
+    return fdt_getprop(fdt, dev->fdt_offset, name, len);
+}
+
+// Get 32-bit unsigned property value
+uint32_t device_get_property_u32(struct device *dev, const char *name, uint32_t default_val) {
+    int len;
+    const uint32_t *prop;
+    
+    prop = device_get_property(dev, name, &len);
+    if (!prop || len != sizeof(uint32_t)) {
+        return default_val;
+    }
+    
+    return fdt32_to_cpu(*prop);
+}
+
+// Check if boolean property exists
+bool device_get_property_bool(struct device *dev, const char *name) {
+    int len;
+    const void *prop;
+    
+    prop = device_get_property(dev, name, &len);
+    return (prop != NULL);  // Property exists = true
+}
+
+// Get string property
+int device_get_property_string(struct device *dev, const char *name, char *buf, size_t buflen) {
+    int len;
+    const char *prop;
+    
+    if (!buf || buflen == 0) {
+        return -1;
+    }
+    
+    prop = device_get_property(dev, name, &len);
+    if (!prop || len <= 0) {
+        return -1;
+    }
+    
+    // Copy string, ensuring null termination
+    size_t copy_len = (size_t)len < buflen - 1 ? (size_t)len : buflen - 1;
+    memcpy(buf, prop, copy_len);
+    buf[copy_len] = '\0';
+    
     return 0;
 }
 
