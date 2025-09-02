@@ -31,6 +31,15 @@ void test_riscv_hardware_interrupts(void);
 // RISCV PLIC comprehensive tests  
 void test_riscv_plic_comprehensive(void);
 
+// RISCV APLIC tests
+void test_riscv_aplic(void);
+
+// RISCV APLIC comprehensive tests
+void test_riscv_aplic_comprehensive(void);
+
+// RISCV APLIC detailed functional tests
+void test_riscv_aplic_detailed(void);
+
 // Hierarchical domain tests
 void test_hierarchical_domains(void);
 

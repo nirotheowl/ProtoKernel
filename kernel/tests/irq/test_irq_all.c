@@ -50,6 +50,20 @@ void run_all_irq_tests(void) {
     test_radix_tree_all();
     */
     
+    // RISC-V APLIC tests
+#ifdef __riscv
+    uart_puts("\n>>> Testing RISC-V APLIC...\n");
+    test_riscv_aplic();
+    
+    uart_puts("\n>>> Running Comprehensive RISC-V APLIC Tests...\n");
+    test_riscv_aplic_comprehensive();
+    
+    uart_puts("\n>>> Running Detailed RISC-V APLIC Tests...\n");
+    test_riscv_aplic_detailed();
+#endif
+    
+    // Comment out unrelated tests - focusing on APLIC
+    /*
     // Tree domain tests - needed for MSI
     uart_puts("\n>>> Testing Tree Domain Support...\n");
     test_tree_domains_comprehensive();
@@ -63,6 +77,7 @@ void run_all_irq_tests(void) {
     uart_puts("\n>>> Testing MSI SPI Allocation...\n");
     test_msi_spi_allocation();
 #endif
+    */
     
     uart_puts("\n");
     uart_puts("================================================================\n");

@@ -80,8 +80,10 @@ static void aplic_irq_unmask(struct irq_desc *desc) {
 
 // End of interrupt
 static void aplic_irq_eoi(struct irq_desc *desc) {
-    // In direct mode, EOI is handled by writing to IDC CLAIMI register
-    // This will be implemented in aplic_direct_complete()
+    // In APLIC direct mode, EOI is handled automatically when claiming
+    // the interrupt via CLAIMI register. The fasteoi flow requires
+    // this callback but no action is needed here.
+    (void)desc;
 }
 
 // Set interrupt type
@@ -196,6 +198,15 @@ int aplic_init(struct aplic_data *aplic) {
     // Initialize hardware
     aplic_init_hw_global(aplic);
     
+    // Verify configuration
+    uint32_t domaincfg = aplic_read(aplic, APLIC_DOMAINCFG);
+    if (!(domaincfg & APLIC_DOMAINCFG_IE)) {
+        uart_puts("APLIC: Warning - interrupts not enabled (IE=0)\n");
+    }
+    if (!aplic->msi_mode && !(domaincfg & APLIC_DOMAINCFG_DM)) {
+        uart_puts("APLIC: Warning - expected direct mode but DM=0\n");
+    }
+    
     // Create IRQ domain
     aplic->domain = irq_domain_create_linear(NULL, aplic->nr_sources + 1, 
                                              &aplic_domain_ops, aplic);
@@ -224,6 +235,10 @@ static int aplic_probe(struct device *dev) {
     // Check for APLIC compatible strings
     if (strstr(dev->compatible, "riscv,aplic") ||
         strstr(dev->compatible, "qemu,aplic")) {
+        // APLIC can be at different addresses depending on mode (M-mode vs S-mode)
+        // When OpenSBI configures APLIC in delegation mode, the S-mode APLIC
+        // is disabled and delegates to the M-mode APLIC. In this case, we use
+        // whichever APLIC is available and enabled.
         return PROBE_SCORE_EXACT;
     }
     
@@ -254,9 +269,7 @@ static int aplic_attach(struct device *dev) {
         aplic->base = (void *)res->start;
     }
     
-    uart_puts("APLIC: Base address: ");
-    uart_puthex((uint64_t)aplic->base);
-    uart_puts("\n");
+    // Store the base address
     
     // Get number of interrupt sources using the new property getter
     num_sources = device_get_property_u32(dev, "riscv,num-sources", 96);  // Default to 96 for QEMU
@@ -277,9 +290,27 @@ static int aplic_attach(struct device *dev) {
         uart_puts("APLIC: Direct mode only hardware\n");
     }
     
-    // TODO: Parse number of harts/IDCs for direct mode
-    aplic->nr_harts = 1;  // Default to 1 hart for now
-    aplic->nr_idcs = 1;   // One IDC per hart in direct mode
+    // Parse interrupts-extended to map harts to IDCs
+    // This property contains pairs of (interrupt-parent-phandle, interrupt-type)
+    // We need to count how many IDCs we have and map them to hart IDs
+    
+    // Try to get interrupts-extended property
+    if (dev->fdt_offset >= 0) {
+        // For now, we'll default to a simple mapping
+        // TODO: Implement proper FDT parsing of interrupts-extended
+        uart_puts("APLIC: TODO - Parse interrupts-extended from device tree\n");
+    }
+    
+    // Default mapping for QEMU: assume IDC 0 maps to hart 0
+    aplic->nr_idcs = 1;
+    aplic->nr_harts = 1;
+    aplic->hart_index_map[0] = 0;  // Hart 0 -> IDC 0
+    
+    uart_puts("APLIC: Configured with ");
+    uart_putdec(aplic->nr_idcs);
+    uart_puts(" IDC(s) for ");
+    uart_putdec(aplic->nr_harts);
+    uart_puts(" hart(s)\n");
     
     // Initialize APLIC
     if (aplic_init(aplic) != 0) {

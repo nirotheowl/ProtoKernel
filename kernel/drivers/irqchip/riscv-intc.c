@@ -10,6 +10,7 @@
 
 #include <irqchip/riscv-intc.h>
 #include <irqchip/riscv-plic.h>
+#include <irqchip/riscv-aplic.h>
 #include <irq/irq.h>
 #include <irq/irq_domain.h>
 #include <uart.h>
@@ -166,8 +167,10 @@ void intc_handle_irq(uint64_t cause) {
         hwirq = IRQ_S_TIMER;
         break;
     case IRQ_S_EXT:
-        // External interrupt - delegate to PLIC
-        if (plic_primary) {
+        // External interrupt - delegate to APLIC if available, otherwise PLIC
+        if (aplic_primary) {
+            aplic_direct_handle_irq();
+        } else if (plic_primary) {
             plic_handle_irq();
         }
         return;

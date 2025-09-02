@@ -100,6 +100,7 @@ struct aplic_data {
     uint32_t nr_sources;        // Number of interrupt sources
     uint32_t nr_harts;          // Number of harts
     uint32_t nr_idcs;           // Number of IDCs (direct mode)
+    uint32_t hart_index_map[16]; // Map hart ID to IDC index (max 16 harts for now)
     struct irq_domain *domain;  // IRQ domain
     bool msi_mode;              // MSI mode enabled
     struct aplic_msicfg msicfg; // MSI configuration
