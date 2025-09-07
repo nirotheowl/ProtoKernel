@@ -4,6 +4,9 @@
  * Kernel initialization (post arch init) 
  */
 
+//Below is a "test driver"
+#include <drivers/hello/hello.h> 
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -92,8 +95,9 @@ void kernel_main(void* dtb) {
     devmap_init();
     
     // Initialize driver subsystem
-    driver_init();
-    
+    driver_init(); 
+    // Register hello driver
+    hello_driver_init(); 
     // Initialize UART (registers drivers)
     uart_init();
     
