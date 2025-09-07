@@ -92,9 +92,24 @@ Running the RISC-V kernel:
 run_emu_riscv
 ```
 
+
+
 ## Documentation 
 
 Details of kernel development, scripts for using the kernel and other relevant information can be 
 found in the `docs/` folder. 
 
-*Last Updated: 2025-08-12*
+### Patch note for 2025-09-07
+added a simple "hello" driver as a test and for future support.  
+
+- Location: `kernel/drivers/hello/`  
+- Header: `kernel/include/drivers/hello/hello.h`  
+- Purpose: Demonstrates how to register a basic driver with the kernel subsystem  
+- Usage: Automatically initialized in `kernel_main.c`  
+- Notes: This driver prints a message or can be used as a template for future miscellaneous drivers.
+(Made by nirotheowl)
+
+*Last Updated: 2025-09-7*
+
+
+
